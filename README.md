@@ -29,18 +29,21 @@ This application uses a Random Forest model trained on historical housing sales 
 ### Setup
 
 1. Clone this repository:
+
 ```
 git clone <repository-url>
 cd malmo-housing-price-predictor
 ```
 
 2. Create a virtual environment (optional but recommended):
+
 ```
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
 3. Install required packages:
+
 ```
 pip install -r requirements.txt
 ```
@@ -64,8 +67,8 @@ joblib
 ## Running the Application
 
 1. Ensure the dataset file `hemnet_properties.csv` is in the project directory
-
 2. Start the Streamlit application:
+
 ```
 streamlit run app.py
 ```
@@ -90,6 +93,7 @@ The prediction model is a Random Forest Regressor trained on the following featu
 ## Data Preparation
 
 Before using the application, ensure your dataset file (`hemnet_properties.csv`) is properly formatted with the following columns:
+
 - final_price
 - location
 - ownership_form
@@ -114,3 +118,10 @@ Before using the application, ensure your dataset file (`hemnet_properties.csv`)
 
 - The model is based on historical data and may not capture very recent market shifts
 - Unique property features (renovations, views, etc.) are not captured
+
+
+## Roadmap
+
+* Better models; tree-based and neural networks
+* Better user interface esp with clicking about
+* Make a mapping of coordinates on to neighbourhoods -
