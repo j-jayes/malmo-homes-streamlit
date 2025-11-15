@@ -76,11 +76,33 @@ class AdaptiveAreaScraper:
         Uses binary search to find largest range under SAFE_LIMIT
         """
         
+        # First check if the initial range is already safe
+        logger.info(f"Finding optimal range starting from {min_area}m²...")
+        
+        initial_count = self.scraper.get_total_results_count(
+            location_id=self.location_id,
+            area_min=min_area,
+            area_max=min(initial_max, self.MAX_AREA)
+        )
+        
+        logger.info(f"  Initial range {min_area}-{min(initial_max, self.MAX_AREA)}m²: {initial_count} results")
+        
+        # If under safe limit, just use this range - no need for binary search!
+        if initial_count < self.SAFE_LIMIT and initial_count > 0:
+            logger.info(f"✅ Range is safe, using {min_area}-{min(initial_max, self.MAX_AREA)}m²")
+            return min_area, min(initial_max, self.MAX_AREA)
+        
+        # If zero results, try to expand
+        if initial_count == 0:
+            logger.info(f"  No results in initial range, trying larger range...")
+            return min_area, min_area + self.MIN_STEP
+        
+        # Only do binary search if we're over the limit
+        logger.info(f"  Over limit ({initial_count} >= {self.SAFE_LIMIT}), using binary search...")
+        
         low = min_area + self.MIN_STEP
         high = min(initial_max, self.MAX_AREA)
         best_max = low
-        
-        logger.info(f"Finding optimal range starting from {min_area}m²...")
         
         while low <= high:
             mid = (low + high) // 2
