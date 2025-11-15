@@ -174,3 +174,7 @@ cython_debug/
 housing_price_model.joblib
 
 preprocessor.joblib
+
+# Ignore model artifacts
+*.joblib
+*.pkl
