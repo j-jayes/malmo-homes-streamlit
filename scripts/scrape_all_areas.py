@@ -184,15 +184,15 @@ class AdaptiveAreaScraper:
         
         while min_area_current < max_area_limit:
             # Calculate initial max for this iteration
-            initial_max = min_area + initial_step
+            initial_max = min_area_current + initial_step
             
             # Find optimal range
-            range_min, range_max = self.find_optimal_range(min_area, initial_max)
+            range_min, range_max = self.find_optimal_range(min_area_current, initial_max)
             
             # Handle edge case: can't make progress
             if range_max <= range_min:
-                logger.warning(f"⚠️ Cannot make progress from {min_area}m². Skipping to next step.")
-                min_area += self.MIN_STEP
+                logger.warning(f"⚠️ Cannot make progress from {min_area_current}m². Skipping to next step.")
+                min_area_current += self.MIN_STEP
                 continue
             
             # Scrape this range
@@ -200,11 +200,11 @@ class AdaptiveAreaScraper:
             all_properties.extend(properties)
             
             # Move to next range
-            min_area = range_max
+            min_area_current = range_max
             
             # Log overall progress
             logger.info(f"📊 Overall progress: {len(all_properties)} properties collected")
-            logger.info(f"📈 Next range starts at {min_area}m²")
+            logger.info(f"📈 Next range starts at {min_area_current}m²")
         
         logger.info(f"🎉 Scraping completed!")
         logger.info(f"📊 Total unique properties: {len(set(p['property_id'] for p in all_properties))}")
