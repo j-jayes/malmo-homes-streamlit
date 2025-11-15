@@ -256,6 +256,22 @@ class SoldPropertiesScraper:
         
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
+        # Check if file exists and has same data (idempotent)
+        if output_path.exists():
+            # Read existing data
+            existing_ids = set()
+            with open(output_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                existing_ids = {row['property_id'] for row in reader}
+            
+            # Check if we have the same data
+            new_ids = {prop['property_id'] for prop in properties}
+            if existing_ids == new_ids:
+                logger.info(f"File {output_path} already exists with same data, skipping")
+                return
+            
+            logger.info(f"Updating existing file {output_path}")
+        
         fieldnames = ['property_id', 'url', 'sold_month', 'scraped_at']
         
         with open(output_path, 'w', newline='', encoding='utf-8') as f:

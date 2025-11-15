@@ -1,0 +1,221 @@
+name: Scrape Sold Properties (Batch)
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_month:
+        description: 'Start month (YYYY-MM)'
+        required: true
+        default: '2020-01'
+      end_month:
+        description: 'End month (YYYY-MM)'
+        required: true
+        default: '2020-12'
+      max_pages:
+        description: 'Max pages per month'
+        required: false
+        type: number
+        default: 50
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  scrape-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # 5h 50m (under 6h limit)
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install dependencies with uv
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e ".[scraping]"
+      
+      - name: Install Playwright and browsers
+        run: |
+          source .venv/bin/activate
+          playwright install chromium --with-deps
+      
+      - name: Setup virtual display (Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          # Start Xvfb in background
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+          sleep 3
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+      
+      - name: Configure git for commits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      
+      - name: Run batch scraper with incremental commits
+        id: scrape
+        run: |
+          source .venv/bin/activate
+          
+          # Parse date range into individual months
+          START="${{ github.event.inputs.start_month }}"
+          END="${{ github.event.inputs.end_month }}"
+          
+          START_YEAR=$(echo $START | cut -d'-' -f1)
+          START_MONTH=$(echo $START | cut -d'-' -f2)
+          END_YEAR=$(echo $END | cut -d'-' -f1)
+          END_MONTH=$(echo $END | cut -d'-' -f2)
+          
+          CURRENT_YEAR=$START_YEAR
+          CURRENT_MONTH=$START_MONTH
+          
+          echo "Scraping months from $START to $END with incremental commits"
+          
+          # Loop through each month
+          while true; do
+            MONTH_STR=$(printf "%04d-%02d" $CURRENT_YEAR $CURRENT_MONTH)
+            
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Scraping month: $MONTH_STR"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Scrape single month
+            python src/scrapers/sold_properties_scraper.py \
+              --month "$MONTH_STR" \
+              --max-pages ${{ github.event.inputs.max_pages }} \
+              --headless || {
+                echo "❌ Failed to scrape $MONTH_STR"
+                echo "Committing progress before exit..."
+                git add data/raw/sold_links/*.csv data/raw/sold_links/*.json data/.hemnet_session.json 2>/dev/null || true
+                git diff --staged --quiet || git commit -m "data: partial batch scrape up to $MONTH_STR (failed)"
+                git push || true
+                exit 1
+              }
+            
+            # Commit this month's data immediately
+            git add data/raw/sold_links/*.csv data/raw/sold_links/*.json data/.hemnet_session.json 2>/dev/null || true
+            
+            if ! git diff --staged --quiet; then
+              echo "💾 Committing data for $MONTH_STR..."
+              git commit -m "data: sold links for $MONTH_STR"
+              git push || {
+                echo "⚠️  Push failed, will retry at end"
+              }
+              echo "✅ Committed $MONTH_STR"
+            else
+              echo "ℹ️  No new data for $MONTH_STR (already exists or empty)"
+            fi
+            
+            # Check if we've reached the end
+            if [ $CURRENT_YEAR -eq $END_YEAR ] && [ $CURRENT_MONTH -eq $END_MONTH ]; then
+              break
+            fi
+            
+            # Increment month
+            CURRENT_MONTH=$((CURRENT_MONTH + 1))
+            if [ $CURRENT_MONTH -gt 12 ]; then
+              CURRENT_MONTH=1
+              CURRENT_YEAR=$((CURRENT_YEAR + 1))
+            fi
+          done
+          
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Batch complete!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        env:
+          DISPLAY: ${{ env.DISPLAY }}
+      
+      - name: Check outputs
+        run: |
+          if [ -d "data/raw/sold_links" ]; then
+            echo "✅ Output directory exists"
+            echo "📊 Files created:"
+            ls -lh data/raw/sold_links/
+            
+            # Count total links
+            TOTAL=$(cat data/raw/sold_links/sold_links_*.csv | wc -l)
+            echo "Total lines (including headers): $TOTAL"
+            
+            # Show summary if exists
+            if [ -f "data/raw/sold_links/backfill_summary.json" ]; then
+              echo "Summary:"
+              cat data/raw/sold_links/backfill_summary.json
+            fi
+          else
+            echo "❌ Output directory not found"
+            exit 1
+          fi
+      
+      - name: Final push (ensure everything is committed)
+        run: |
+          # Pull any changes from parallel workflows
+          git config pull.rebase false
+          git pull origin main || echo "No remote changes to pull"
+          
+          # Add any remaining files
+          git add data/raw/sold_links/*.csv data/raw/sold_links/*.json data/.hemnet_session.json 2>/dev/null || true
+          
+          # Final commit if needed
+          if ! git diff --staged --quiet; then
+            git commit -m "data: final batch commit for ${{ github.event.inputs.start_month }} to ${{ github.event.inputs.end_month }}"
+            git push
+          else
+            echo "✅ Everything already committed"
+          fi
+      
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sold-links-${{ github.event.inputs.start_month }}-to-${{ github.event.inputs.end_month }}
+          path: |
+            data/raw/sold_links/*.csv
+            data/raw/sold_links/*.json
+          retention-days: 30
+      
+      - name: Create summary
+        if: success()
+        run: |
+          echo "## ✅ Batch Scraping Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date Range:** ${{ github.event.inputs.start_month }} to ${{ github.event.inputs.end_month }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "data/raw/sold_links/backfill_summary.json" ]; then
+            MONTHS=$(jq -r '.total_months' data/raw/sold_links/backfill_summary.json)
+            LINKS=$(jq -r '.total_links' data/raw/sold_links/backfill_summary.json)
+            echo "**Months scraped:** $MONTHS" >> $GITHUB_STEP_SUMMARY
+            echo "**Total links:** $LINKS" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const start = '${{ github.event.inputs.start_month }}';
+            const end = '${{ github.event.inputs.end_month }}';
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Batch scraping failed: ${start} to ${end}`,
+              body: `The batch sold properties scraping workflow failed.\n\n**Date range:** ${start} to ${end}\n\nCheck the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.\n\n**Next steps:**\n- Review the logs for Cloudflare blocks\n- Check which months were completed in \`backfill_progress.json\`\n- Re-run the workflow for failed months only\n- Consider smaller date ranges if timeouts occurred`,
+              labels: ['automation', 'scraping', 'sold-properties', 'bug']
+            })
