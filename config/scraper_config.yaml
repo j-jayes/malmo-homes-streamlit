@@ -1,0 +1,77 @@
+# Hemnet Property Scraper Configuration
+
+scraper:
+  # User agent for requests
+  user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+  
+  # Rate limiting
+  requests_per_minute: 10
+  delay_between_requests: 6  # seconds
+  
+  # Retry settings
+  max_retries: 3
+  retry_delay: 10  # seconds
+  
+  # Browser settings
+  headless: false  # Set to true for CI/CD
+  timeout: 60000  # milliseconds
+
+# Regions to scrape
+regions:
+  malmo:
+    location_id: 17989
+    name: "Malmö kommun"
+    enabled: true
+  
+  stockholm:
+    location_id: 17744  # Example - verify actual ID
+    name: "Stockholm kommun"
+    enabled: false  # Enable when expanding
+  
+  gothenburg:
+    location_id: 17920  # Example - verify actual ID
+    name: "Göteborg kommun"
+    enabled: false  # Enable when expanding
+
+# Property filters
+filters:
+  item_types:
+    - bostadsratt  # Active listings
+    # - villa
+    # - radhus
+  
+  # For pagination strategy
+  rooms_ranges:
+    - [1, 1]    # 1 room
+    - [2, 2]    # 2 rooms
+    - [3, 3]    # 3 rooms
+    - [4, 4]    # 4 rooms
+    - [5, 10]   # 5+ rooms
+  
+  price_ranges:  # SEK
+    - [0, 1000000]
+    - [1000000, 2000000]
+    - [2000000, 3000000]
+    - [3000000, 5000000]
+    - [5000000, 10000000]
+    - [10000000, 999999999]
+  
+  area_ranges:  # m²
+    - [0, 40]
+    - [40, 60]
+    - [60, 80]
+    - [80, 100]
+    - [100, 150]
+    - [150, 999]
+
+# Pagination
+pagination:
+  max_pages_per_query: 50  # Hemnet limit
+  results_per_page: 50
+  max_results_before_split: 2500  # When to apply additional filters
+
+# Sold properties (different structure)
+sold_properties:
+  enabled: false  # Enable after initial active listings scrape
+  # Note: Sold properties have different data fields
+  # URL pattern: https://www.hemnet.se/salda/bostader

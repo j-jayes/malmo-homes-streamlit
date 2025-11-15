@@ -1,0 +1,102 @@
+name: Generate Weekly Reports
+
+on:
+  schedule:
+    # Run every Sunday at 02:00 UTC (after scraping completes)
+    - cron: '0 2 * * 0'
+  workflow_dispatch: # Allow manual triggering
+  workflow_run:
+    workflows: ["Weekly Property Scraping"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  generate-reports:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install dependencies
+        run: |
+          source .venv/bin/activate
+          uv pip install -r requirements.txt
+      
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 'release'
+      
+      - name: Install Typst
+        run: |
+          wget https://github.com/typst/typst/releases/latest/download/typst-x86_64-unknown-linux-musl.tar.xz
+          tar -xf typst-x86_64-unknown-linux-musl.tar.xz
+          sudo mv typst-x86_64-unknown-linux-musl/typst /usr/local/bin/
+      
+      - name: Generate Quarto reports
+        run: |
+          source .venv/bin/activate
+          cd reports
+          quarto render . --to html
+          quarto render . --to typst
+      
+      - name: Generate market analysis report
+        run: |
+          source .venv/bin/activate
+          python scripts/generate_market_report.py --output reports/_site/market_analysis_$(date +%Y%m%d).html
+      
+      - name: Generate neighborhood statistics
+        run: |
+          source .venv/bin/activate
+          python scripts/generate_neighborhood_stats.py --output reports/_site/neighborhoods_$(date +%Y%m%d).html
+      
+      - name: Upload reports as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ github.run_number }}
+          path: |
+            reports/_site/
+            reports/**/*.pdf
+          retention-days: 90
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'reports/_site'
+  
+  deploy-pages:
+    needs: generate-reports
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,82 @@
+# Application Configuration
+
+app:
+  name: "Malmö Housing Market Analyzer"
+  version: "0.1.0"
+  debug: false
+
+# Streamlit settings
+streamlit:
+  title: "Swedish Housing Market Analytics"
+  icon: "🏠"
+  layout: "wide"
+  initial_sidebar_state: "expanded"
+
+# FastAPI settings
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  workers: 4
+
+# Map settings
+map:
+  default_center:
+    malmo:
+      lat: 55.6050
+      lon: 13.0038
+      zoom: 12
+    stockholm:
+      lat: 59.3293
+      lon: 18.0686
+      zoom: 11
+    gothenburg:
+      lat: 57.7089
+      lon: 11.9746
+      zoom: 12
+  
+  tile_layer: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+  attribution: "© OpenStreetMap contributors"
+
+# Visualization settings
+visualization:
+  color_schemes:
+    price: "YlOrRd"
+    price_per_m2: "Viridis"
+    days_on_market: "Blues"
+  
+  default_plots:
+    - price_distribution
+    - price_per_m2_by_area
+    - price_trends_over_time
+    - rooms_vs_price
+
+# Analytics settings
+analytics:
+  # Inflation adjustment
+  inflation_base_year: 2024
+  inflation_source: "SCB"  # Statistics Sweden
+  
+  # Market metrics
+  moving_average_days: 30
+  trend_analysis_months: 6
+  
+  # Property comparison
+  max_comparison_properties: 5
+  similarity_threshold: 0.7
+
+# Report settings
+reports:
+  output_dir: "reports"
+  formats:
+    - "html"
+    - "pdf"
+  
+  schedule:
+    frequency: "weekly"
+    day: "sunday"
+    time: "00:00"
+  
+  publish:
+    github_pages: true
+    branch: "gh-pages"

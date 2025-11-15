@@ -1,0 +1,108 @@
+name: Weekly Property Scraping
+
+on:
+  schedule:
+    # Run every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  contents: write # Required to commit and push changes
+
+jobs:
+  scrape-properties:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120 # 2 hour timeout for scraping
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for proper git operations
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Create virtual environment
+        run: uv venv
+      
+      - name: Install dependencies
+        run: |
+          source .venv/bin/activate
+          uv pip install -r requirements.txt
+          
+      - name: Install Playwright browsers
+        run: |
+          source .venv/bin/activate
+          playwright install chromium --with-deps
+      
+      - name: Collect property links (Malmö)
+        run: |
+          source .venv/bin/activate
+          python src/scrapers/link_collector.py --location-id 17989 --max-pages 50 --output data/raw/malmo_links_$(date +%Y%m%d).csv
+        continue-on-error: false
+      
+      - name: Scrape property details
+        run: |
+          source .venv/bin/activate
+          python src/scrapers/property_scraper.py --input data/raw/malmo_links_$(date +%Y%m%d).csv --output data/raw/malmo_properties_$(date +%Y%m%d).csv
+        continue-on-error: false
+      
+      - name: Validate scraped data
+        run: |
+          source .venv/bin/activate
+          python scripts/validate_data.py --input data/raw/malmo_properties_$(date +%Y%m%d).csv
+        continue-on-error: true
+      
+      - name: Update DuckDB database
+        run: |
+          source .venv/bin/activate
+          python scripts/update_database.py --input data/raw/malmo_properties_$(date +%Y%m%d).csv
+        continue-on-error: false
+      
+      - name: Generate statistics
+        run: |
+          source .venv/bin/activate
+          python scripts/generate_stats.py --output data/processed/weekly_stats_$(date +%Y%m%d).json
+      
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: weekly scrape $(date +%Y-%m-%d)"
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          file_pattern: 'data/raw/*.csv data/processed/*.json data/database/*.duckdb data/database/*.parquet'
+          commit_options: '--no-verify'
+          skip_fetch: false
+          skip_checkout: false
+      
+      - name: Upload scraping logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraping-logs-${{ github.run_number }}
+          path: |
+            logs/
+            data/raw/malmo_properties_*.csv
+          retention-days: 30
+      
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Weekly scraping failed - ' + new Date().toISOString().split('T')[0],
+              body: 'The weekly property scraping workflow failed. Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.',
+              labels: ['automation', 'scraping', 'bug']
+            })

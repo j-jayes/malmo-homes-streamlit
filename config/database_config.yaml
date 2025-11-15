@@ -1,0 +1,78 @@
+# Database Configuration
+
+# DuckDB settings
+duckdb:
+  path: "data/database/hemnet.duckdb"
+  memory_limit: "2GB"
+  threads: 4
+
+# Schema definitions
+tables:
+  properties:
+    name: "properties"
+    columns:
+      - property_id: VARCHAR PRIMARY KEY
+      - url: VARCHAR
+      - title: VARCHAR
+      - street_address: VARCHAR
+      - city: VARCHAR
+      - region: VARCHAR
+      - postal_code: VARCHAR
+      - latitude: DOUBLE
+      - longitude: DOUBLE
+      - price_asking: INTEGER
+      - price_sold: INTEGER  # NULL for active listings
+      - rooms: DOUBLE
+      - living_area: DOUBLE
+      - property_type: VARCHAR
+      - ownership_type: VARCHAR
+      - floor: INTEGER
+      - building_year: INTEGER
+      - monthly_fee: INTEGER
+      - operating_cost: INTEGER
+      - balcony: BOOLEAN
+      - elevator: BOOLEAN
+      - parking: BOOLEAN
+      - status: VARCHAR  # 'active', 'sold', 'removed'
+      - days_on_market: INTEGER
+      - scraped_at: TIMESTAMP
+      - first_seen: TIMESTAMP
+      - last_seen: TIMESTAMP
+      - sold_at: TIMESTAMP
+  
+  price_history:
+    name: "price_history"
+    columns:
+      - id: INTEGER PRIMARY KEY
+      - property_id: VARCHAR
+      - price: INTEGER
+      - recorded_at: TIMESTAMP
+      - FOREIGN KEY: property_id REFERENCES properties(property_id)
+  
+  neighborhoods:
+    name: "neighborhoods"
+    columns:
+      - id: INTEGER PRIMARY KEY
+      - name: VARCHAR
+      - city: VARCHAR
+      - region: VARCHAR
+      - avg_price_m2: DOUBLE
+      - median_price: DOUBLE
+      - properties_count: INTEGER
+      - updated_at: TIMESTAMP
+
+# Data retention
+retention:
+  active_listings_days: 365  # Keep active listings for 1 year after removal
+  sold_properties_days: -1   # Keep forever (-1)
+  price_history_days: -1     # Keep forever
+
+# Export formats
+export:
+  parquet:
+    compression: "snappy"
+    row_group_size: 100000
+  
+  csv:
+    encoding: "utf-8"
+    delimiter: ","

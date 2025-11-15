@@ -170,11 +170,60 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Project-specific ignores
 
-housing_price_model.joblib
+# Data files (large)
+data/raw/*.csv
+data/raw/*.json
+data/raw/*.parquet
+data/processed/*.parquet
+data/database/*.duckdb
+data/database/*.db
 
-preprocessor.joblib
+# Keep example files
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+!data/database/.gitkeep
 
-# Ignore model artifacts
-*.joblib
-*.pkl
+# Models
+models/*.joblib
+models/*.pkl
+models/*.h5
+models/*.pt
+!models/.gitkeep
+
+# Reports
+reports/*.pdf
+reports/*.html
+reports/figures/*.png
+reports/figures/*.jpg
+reports/figures/*.svg
+!reports/figures/.gitkeep
+
+# Archive
+archive/
+
+# Playwright
+.playwright/
+
+# Quarto
+.quarto/
+_site/
+*_cache/
+*_files/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary/debug files
+*.tmp
+*.bak
+debug*.html
+hemnet_*.json
+hemnet_*.html

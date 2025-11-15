@@ -1,0 +1,54 @@
+name: Deploy Application
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'src/**'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-streamlit:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Deploy to Streamlit Cloud
+        run: |
+          echo "Streamlit deployment would happen here"
+          echo "Configure Streamlit Cloud deployment settings in your Streamlit account"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: main"
+          echo "Main file: app/streamlit_app.py"
+    
+    # Placeholder for future FastAPI deployment
+    # - name: Build Docker image
+    #   run: docker build -t malmo-housing-api:${{ github.sha }} .
+    
+    # - name: Push to container registry
+    #   run: echo "Push Docker image to registry"
+    
+    # - name: Deploy to cloud provider
+    #   run: echo "Deploy FastAPI application"
+
+  health-check:
+    runs-on: ubuntu-latest
+    needs: deploy-streamlit
+    if: always()
+    
+    steps:
+      - name: Check application health
+        run: |
+          echo "Application deployment completed"
+          echo "Manual verification required for Streamlit Cloud deployment"
+          # In the future, add actual health check endpoint testing
+          # curl -f https://your-app-url.streamlit.app/health || exit 1
