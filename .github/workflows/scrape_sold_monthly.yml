@@ -79,14 +79,15 @@ jobs:
           source .venv/bin/activate
           
           # Build command
-          CMD="python src/scrapers/sold_properties_scraper.py --month ${{ steps.month.outputs.month }}"
+          CMD="python src/scrapers/sold_properties_scraper.py --month ${{ steps.month.outputs.month }} --headless"
           
           # Add test flag if needed
           if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
             CMD="$CMD --test"
           fi
           
-          # Run in headed mode (Xvfb provides display)
+          # Run the scraper
+          echo "Running: $CMD"
           $CMD
         env:
           DISPLAY: ${{ env.DISPLAY }}
