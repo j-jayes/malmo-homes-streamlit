@@ -1,18 +1,15 @@
-name: Scrape Sold Properties (Batch)
+name: Scrape All Sold Properties (Area-Based)
 
 on:
   workflow_dispatch:
     inputs:
-      start_month:
-        description: 'Start month (YYYY-MM)'
-        required: true
-        default: '2020-01'
-      end_month:
-        description: 'End month (YYYY-MM)'
-        required: true
-        default: '2020-12'
+      initial_step:
+        description: 'Initial step size (m²)'
+        required: false
+        type: number
+        default: 50
       max_pages:
-        description: 'Max pages per month'
+        description: 'Max pages per area range'
         required: false
         type: number
         default: 50
@@ -22,7 +19,7 @@ permissions:
   issues: write
 
 jobs:
-  scrape-batch:
+  scrape-all-areas:
     runs-on: ubuntu-latest
     timeout-minutes: 350  # 5h 50m (under 6h limit)
     
@@ -69,94 +66,64 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       
-      - name: Run batch scraper with incremental commits
+      - name: Run adaptive area scraper with progress tracking
         id: scrape
         run: |
           source .venv/bin/activate
           
-          # Parse date range into individual months
-          START="${{ github.event.inputs.start_month }}"
-          END="${{ github.event.inputs.end_month }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Starting adaptive area-based scraping"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          START_YEAR=$(echo $START | cut -d'-' -f1)
-          START_MONTH=$(echo $START | cut -d'-' -f2)
-          END_YEAR=$(echo $END | cut -d'-' -f1)
-          END_MONTH=$(echo $END | cut -d'-' -f2)
+          # Run adaptive area scraper
+          python scripts/scrape_all_areas.py \
+            --headless \
+            --initial-step ${{ github.event.inputs.initial_step }} \
+            --max-pages ${{ github.event.inputs.max_pages }} \
+            --output-dir data/raw/area_ranges || {
+              echo "❌ Scraping failed"
+              echo "Committing progress before exit..."
+              git add data/raw/area_ranges/*.csv data/raw/area_ranges/*.json data/.hemnet_session.json 2>/dev/null || true
+              git diff --staged --quiet || git commit -m "data: partial area scrape (failed)"
+              git push || true
+              exit 1
+            }
           
-          CURRENT_YEAR=$START_YEAR
-          CURRENT_MONTH=$START_MONTH
+          # Commit progress incrementally (scraper saves after each range)
+          git add data/raw/area_ranges/*.csv data/raw/area_ranges/*.json data/raw/sold_properties_all_areas.csv data/.hemnet_session.json 2>/dev/null || true
           
-          echo "Scraping months from $START to $END with incremental commits"
-          
-          # Loop through each month
-          while true; do
-            MONTH_STR=$(printf "%04d-%02d" $CURRENT_YEAR $CURRENT_MONTH)
-            
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "Scraping month: $MONTH_STR"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
-            # Scrape single month
-            python src/scrapers/sold_properties_scraper.py \
-              --month "$MONTH_STR" \
-              --max-pages ${{ github.event.inputs.max_pages }} \
-              --headless || {
-                echo "❌ Failed to scrape $MONTH_STR"
-                echo "Committing progress before exit..."
-                git add data/raw/sold_links/*.csv data/raw/sold_links/*.json data/.hemnet_session.json 2>/dev/null || true
-                git diff --staged --quiet || git commit -m "data: partial batch scrape up to $MONTH_STR (failed)"
-                git push || true
-                exit 1
-              }
-            
-            # Commit this month's data immediately
-            git add data/raw/sold_links/*.csv data/raw/sold_links/*.json data/.hemnet_session.json 2>/dev/null || true
-            
-            if ! git diff --staged --quiet; then
-              echo "💾 Committing data for $MONTH_STR..."
-              git commit -m "data: sold links for $MONTH_STR"
-              git push || {
-                echo "⚠️  Push failed, will retry at end"
-              }
-              echo "✅ Committed $MONTH_STR"
-            else
-              echo "ℹ️  No new data for $MONTH_STR (already exists or empty)"
-            fi
-            
-            # Check if we've reached the end
-            if [ $CURRENT_YEAR -eq $END_YEAR ] && [ $CURRENT_MONTH -eq $END_MONTH ]; then
-              break
-            fi
-            
-            # Increment month
-            CURRENT_MONTH=$((CURRENT_MONTH + 1))
-            if [ $CURRENT_MONTH -gt 12 ]; then
-              CURRENT_MONTH=1
-              CURRENT_YEAR=$((CURRENT_YEAR + 1))
-            fi
-          done
+          if ! git diff --staged --quiet; then
+            echo "💾 Committing scraped data..."
+            git commit -m "data: sold property links via area filtering"
+            git push || {
+              echo "⚠️  Push failed, will retry at end"
+            }
+            echo "✅ Committed data"
+          fi
           
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "✅ Batch complete!"
+          echo "✅ Scraping complete!"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         env:
           DISPLAY: ${{ env.DISPLAY }}
       
       - name: Check outputs
         run: |
-          if [ -d "data/raw/sold_links" ]; then
+          if [ -d "data/raw/area_ranges" ]; then
             echo "✅ Output directory exists"
             echo "📊 Files created:"
-            ls -lh data/raw/sold_links/
+            ls -lh data/raw/area_ranges/
             
-            # Count total links
-            TOTAL=$(cat data/raw/sold_links/sold_links_*.csv | wc -l)
-            echo "Total lines (including headers): $TOTAL"
+            # Count total unique properties
+            if [ -f "data/raw/sold_properties_all_areas.csv" ]; then
+              TOTAL=$(tail -n +2 data/raw/sold_properties_all_areas.csv | wc -l)
+              echo "Total unique properties: $TOTAL"
+            fi
             
-            # Show summary if exists
-            if [ -f "data/raw/sold_links/backfill_summary.json" ]; then
-              echo "Summary:"
-              cat data/raw/sold_links/backfill_summary.json
+            # Show progress
+            if [ -f "data/raw/area_ranges/progress.json" ]; then
+              echo "Progress:"
+              cat data/raw/area_ranges/progress.json
             fi
           else
             echo "❌ Output directory not found"
@@ -170,11 +137,11 @@ jobs:
           git pull origin main || echo "No remote changes to pull"
           
           # Add any remaining files
-          git add data/raw/sold_links/*.csv data/raw/sold_links/*.json data/.hemnet_session.json 2>/dev/null || true
+          git add data/raw/area_ranges/*.csv data/raw/area_ranges/*.json data/raw/sold_properties_all_areas.csv data/.hemnet_session.json 2>/dev/null || true
           
           # Final commit if needed
           if ! git diff --staged --quiet; then
-            git commit -m "data: final batch commit for ${{ github.event.inputs.start_month }} to ${{ github.event.inputs.end_month }}"
+            git commit -m "data: final area-based scrape commit"
             git push
           else
             echo "✅ Everything already committed"
@@ -184,25 +151,24 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sold-links-${{ github.event.inputs.start_month }}-to-${{ github.event.inputs.end_month }}
+          name: sold-properties-all-areas
           path: |
-            data/raw/sold_links/*.csv
-            data/raw/sold_links/*.json
+            data/raw/area_ranges/*.csv
+            data/raw/area_ranges/*.json
+            data/raw/sold_properties_all_areas.csv
           retention-days: 30
       
       - name: Create summary
         if: success()
         run: |
-          echo "## ✅ Batch Scraping Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Date Range:** ${{ github.event.inputs.start_month }} to ${{ github.event.inputs.end_month }}" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Area-Based Scraping Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [ -f "data/raw/sold_links/backfill_summary.json" ]; then
-            MONTHS=$(jq -r '.total_months' data/raw/sold_links/backfill_summary.json)
-            LINKS=$(jq -r '.total_links' data/raw/sold_links/backfill_summary.json)
-            echo "**Months scraped:** $MONTHS" >> $GITHUB_STEP_SUMMARY
-            echo "**Total links:** $LINKS" >> $GITHUB_STEP_SUMMARY
+          if [ -f "data/raw/area_ranges/progress.json" ]; then
+            TOTAL=$(cat data/raw/area_ranges/progress.json | jq -r '.total_properties')
+            RANGES=$(cat data/raw/area_ranges/progress.json | jq -r '.completed_ranges | length')
+            echo "**Total properties:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+            echo "**Area ranges completed:** $RANGES" >> $GITHUB_STEP_SUMMARY
           fi
       
       - name: Create issue on failure
@@ -210,12 +176,10 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const start = '${{ github.event.inputs.start_month }}';
-            const end = '${{ github.event.inputs.end_month }}';
             github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `🚨 Batch scraping failed: ${start} to ${end}`,
-              body: `The batch sold properties scraping workflow failed.\n\n**Date range:** ${start} to ${end}\n\nCheck the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.\n\n**Next steps:**\n- Review the logs for Cloudflare blocks\n- Check which months were completed in \`backfill_progress.json\`\n- Re-run the workflow for failed months only\n- Consider smaller date ranges if timeouts occurred`,
+              title: `🚨 Area-based scraping failed`,
+              body: `The area-based sold properties scraping workflow failed.\n\nCheck the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.\n\n**Next steps:**\n- Review the logs for Cloudflare blocks\n- Check \`data/raw/area_ranges/progress.json\` to see which ranges completed\n- Re-run the workflow to resume from last checkpoint\n- The scraper has built-in resume capability`,
               labels: ['automation', 'scraping', 'sold-properties', 'bug']
             })

@@ -1,0 +1,136 @@
+{
+  "total": 15,
+  "successful": 15,
+  "failed": 0,
+  "success_rate": 100.0,
+  "field_presence": {
+    "property_id": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "property_type": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "url": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "scraped_at": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "address": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "city": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "neighborhood": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "latitude": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "longitude": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "housing_type": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "ownership_type": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "rooms": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "living_area": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "lot_area": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "floor": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "has_elevator": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "has_balcony": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "building_year": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "energy_class": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "association_name": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "association_fee": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "operating_cost": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "description": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "asking_price": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "final_price": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "price_change": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "price_change_pct": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "price_per_sqm_final": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "sold_date": {
+      "count": 15,
+      "rate": 100.0
+    },
+    "days_on_market": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "visit_count": {
+      "count": 0,
+      "rate": 0.0
+    }
+  },
+  "property_types": {
+    "sold": 15
+  },
+  "errors": {}
+}

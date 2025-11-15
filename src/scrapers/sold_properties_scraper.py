@@ -140,11 +140,151 @@ class SoldPropertiesScraper:
         """Extract total number of results from page"""
         try:
             text = page.locator('text=/Visar .* av/').first.inner_text()
-            # Extract number after "av"
-            total = int(text.split('av')[1].strip().replace(' ', ''))
+            # Extract number after "av" - handle both "625" and "625 " formats
+            total_str = text.split('av')[1].strip().replace(' ', '').replace('\xa0', '')
+            total = int(total_str)
             return total
-        except:
+        except Exception as e:
+            logger.debug(f"Could not extract total results: {e}")
             return 0
+    
+    def get_total_results_count(self, location_id: str, area_min: int, area_max: int) -> int:
+        """Get result count for an area range without scraping full pages"""
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--disable-blink-features=AutomationControlled']
+            )
+            
+            try:
+                context = self._setup_browser_context(browser)
+                page = context.new_page()
+                
+                url = f"{self.BASE_URL}?item_types[]=bostadsratt&location_ids[]={location_id}&living_area_min={area_min}&living_area_max={area_max}"
+                
+                logger.info(f"Checking result count for area {area_min}-{area_max}m²")
+                page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                
+                self._handle_cloudflare_if_needed(page)
+                time.sleep(2)  # Let page fully load
+                
+                total = self.get_total_results(page)
+                logger.info(f"Found {total} results for area {area_min}-{area_max}m²")
+                
+                return total
+                
+            except Exception as e:
+                logger.error(f"Error getting result count: {e}")
+                return 0
+            finally:
+                browser.close()
+    
+    def scrape_area_range(
+        self,
+        area_min: int,
+        area_max: int,
+        location_id: str = "17989",
+        max_pages: int = 50
+    ) -> List[Dict]:
+        """Scrape sold properties within a specific living area range
+        
+        Args:
+            area_min: Minimum living area in m²
+            area_max: Maximum living area in m²
+            location_id: Hemnet location ID (default: Malmö)
+            max_pages: Maximum pages to scrape
+        
+        Returns:
+            List of property data dictionaries
+        """
+        
+        properties = []
+        area_str = f"{area_min}-{area_max}m²"
+        logger.info(f"Starting scrape for area range {area_str}")
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=self.headless,
+                slow_mo=self.slow_mo,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                ]
+            )
+            
+            try:
+                context = self._setup_browser_context(browser)
+                page = context.new_page()
+                
+                # Build URL with living area filter
+                url = f"{self.BASE_URL}?item_types[]=bostadsratt&location_ids[]={location_id}&living_area_min={area_min}&living_area_max={area_max}"
+                
+                logger.info(f"Navigating to: {url}")
+                page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                
+                # Handle Cloudflare
+                self._handle_cloudflare_if_needed(page)
+                
+                # Get total results
+                total_results = self.get_total_results(page)
+                logger.info(f"Total results for {area_str}: {total_results}")
+                
+                if total_results >= 2500:
+                    logger.warning(f"⚠️ Result count ({total_results}) exceeds 2,500 limit! Consider splitting this range.")
+                
+                # Save session cookies after first successful page load
+                if not Path(self.SESSION_FILE).exists():
+                    Path(self.SESSION_FILE).parent.mkdir(parents=True, exist_ok=True)
+                    context.storage_state(path=self.SESSION_FILE)
+                    logger.info("Session saved for future use")
+                
+                # Calculate pages to scrape
+                total_pages = min((total_results + 49) // 50, max_pages)
+                logger.info(f"Will scrape {total_pages} pages")
+                
+                all_links = []
+                
+                # Scrape each page
+                for page_num in range(1, total_pages + 1):
+                    logger.info(f"Scraping page {page_num}/{total_pages}")
+                    
+                    if page_num > 1:
+                        page_url = f"{url}&page={page_num}"
+                        self._human_like_delay(5, 10)
+                        page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
+                    
+                    # Scroll to load all content
+                    self._scroll_page_slowly(page)
+                    
+                    # Extract links
+                    links = self.extract_property_links(page)
+                    all_links.extend(links)
+                    
+                    logger.info(f"Total unique links so far: {len(set(all_links))}")
+                
+                # Deduplicate
+                unique_links = list(set(all_links))
+                logger.info(f"Collected {len(unique_links)} unique property links for {area_str}")
+                
+                # Convert to property data format
+                properties = [{
+                    'property_id': link.split('-')[-1],
+                    'url': link,
+                    'area_range': area_str,
+                    'scraped_at': datetime.now().isoformat()
+                } for link in unique_links]
+                
+            except Exception as e:
+                logger.error(f"Error scraping area range {area_str}: {e}")
+                raise
+            
+            finally:
+                browser.close()
+        
+        return properties
     
     def scrape_month(
         self,
@@ -187,8 +327,19 @@ class SoldPropertiesScraper:
                 context = self._setup_browser_context(browser)
                 page = context.new_page()
                 
-                # Build URL with date filter
-                url = f"{self.BASE_URL}?item_types[]=bostadsratt&location_ids[]={location_id}&sold_min={year}-{month:02d}-01"
+                # Calculate the last day of the month for sold_max
+                if month == 12:
+                    next_month_year = year + 1
+                    next_month = 1
+                else:
+                    next_month_year = year
+                    next_month = month + 1
+                
+                sold_min = f"{year}-{month:02d}-01"
+                sold_max = f"{next_month_year}-{next_month:02d}-01"
+                
+                # Build URL with date filter - MUST include sold_age=all to enable date filtering
+                url = f"{self.BASE_URL}?item_types[]=bostadsratt&location_ids[]={location_id}&sold_age=all&sold_min={sold_min}&sold_max={sold_max}"
                 
                 logger.info(f"Navigating to: {url}")
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -272,7 +423,13 @@ class SoldPropertiesScraper:
             
             logger.info(f"Updating existing file {output_path}")
         
-        fieldnames = ['property_id', 'url', 'sold_month', 'scraped_at']
+        # Determine fieldnames based on what's in the data
+        if properties:
+            # Use all fields present in first property
+            fieldnames = list(properties[0].keys())
+        else:
+            # Default fieldnames
+            fieldnames = ['property_id', 'url', 'sold_month', 'scraped_at']
         
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -290,8 +447,17 @@ def parse_month(month_str: str) -> tuple[int, int]:
 
 def main():
     parser = argparse.ArgumentParser(description='Scrape sold properties from Hemnet')
-    parser.add_argument('--month', type=str, 
-                       help='Month to scrape (YYYY-MM), defaults to last month')
+    
+    # Mode selection
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument('--month', type=str, 
+                           help='Month to scrape (YYYY-MM), defaults to last month')
+    mode_group.add_argument('--area-min', type=int,
+                           help='Minimum living area in m² (use with --area-max)')
+    
+    # Common arguments
+    parser.add_argument('--area-max', type=int,
+                       help='Maximum living area in m² (requires --area-min)')
     parser.add_argument('--location-id', type=str, default='17989',
                        help='Hemnet location ID (default: 17989 for Malmö)')
     parser.add_argument('--max-pages', type=int, default=30,
@@ -302,55 +468,112 @@ def main():
                        help='Run in headless mode')
     parser.add_argument('--test', action='store_true',
                        help='Test mode: scrape only 2 pages')
+    parser.add_argument('--check-count', action='store_true',
+                       help='Only check result count, do not scrape')
     
     args = parser.parse_args()
     
-    # Determine month to scrape
-    if args.month:
-        year, month = parse_month(args.month)
-    else:
-        # Default to last month
-        last_month = datetime.now() - timedelta(days=30)
-        year, month = last_month.year, last_month.month
+    # Validate area arguments
+    if args.area_min is not None and args.area_max is None:
+        parser.error('--area-max is required when using --area-min')
+    if args.area_max is not None and args.area_min is None:
+        parser.error('--area-min is required when using --area-max')
     
     # Test mode: limit to 2 pages
     max_pages = 2 if args.test else args.max_pages
     
-    # Determine output path
-    if args.output:
-        output_path = Path(args.output)
-    else:
-        output_path = Path(f"data/raw/sold_properties_{year}{month:02d}.csv")
-    
-    logger.info(f"Configuration:")
-    logger.info(f"  Month: {year}-{month:02d}")
-    logger.info(f"  Location ID: {args.location_id}")
-    logger.info(f"  Max pages: {max_pages}")
-    logger.info(f"  Headless: {args.headless}")
-    logger.info(f"  Output: {output_path}")
-    
-    # Create scraper and run
+    # Create scraper
     scraper = SoldPropertiesScraper(
         headless=args.headless,
         slow_mo=100 if not args.headless else 0
     )
     
-    try:
-        properties = scraper.scrape_month(
-            year=year,
-            month=month,
-            location_id=args.location_id,
-            max_pages=max_pages
-        )
+    # Mode: Area filtering
+    if args.area_min is not None:
+        area_min = args.area_min
+        area_max = args.area_max
         
-        scraper.save_to_csv(properties, output_path)
+        # Check count only mode
+        if args.check_count:
+            count = scraper.get_total_results_count(
+                location_id=args.location_id,
+                area_min=area_min,
+                area_max=area_max
+            )
+            logger.info(f"✅ Result count for {area_min}-{area_max}m²: {count}")
+            if count >= 2500:
+                logger.warning("⚠️ This range will hit the 2,500 result limit!")
+            return
         
-        logger.info("✅ Scraping completed successfully!")
-        logger.info(f"📊 Collected {len(properties)} properties")
+        # Determine output path
+        if args.output:
+            output_path = Path(args.output)
+        else:
+            output_path = Path(f"data/raw/sold_properties_area_{area_min}_{area_max}.csv")
         
-    except Exception as e:
-        logger.error(f"❌ Scraping failed: {e}")
-        raise
+        logger.info(f"Configuration:")
+        logger.info(f"  Area range: {area_min}-{area_max}m²")
+        logger.info(f"  Location ID: {args.location_id}")
+        logger.info(f"  Max pages: {max_pages}")
+        logger.info(f"  Headless: {args.headless}")
+        logger.info(f"  Output: {output_path}")
+        
+        try:
+            properties = scraper.scrape_area_range(
+                area_min=area_min,
+                area_max=area_max,
+                location_id=args.location_id,
+                max_pages=max_pages
+            )
+            
+            scraper.save_to_csv(properties, output_path)
+            
+            logger.info("✅ Scraping completed successfully!")
+            logger.info(f"📊 Collected {len(properties)} properties")
+            
+        except Exception as e:
+            logger.error(f"❌ Scraping failed: {e}")
+            raise
+    
+    # Mode: Month filtering (original behavior)
+    else:
+        # Determine month to scrape
+        if args.month:
+            year, month = parse_month(args.month)
+        else:
+            # Default to last month
+            last_month = datetime.now() - timedelta(days=30)
+            year, month = last_month.year, last_month.month
+        
+        # Determine output path
+        if args.output:
+            output_path = Path(args.output)
+        else:
+            output_path = Path(f"data/raw/sold_links/sold_links_{year}{month:02d}.csv")
+        
+        logger.info(f"Configuration:")
+        logger.info(f"  Month: {year}-{month:02d}")
+        logger.info(f"  Location ID: {args.location_id}")
+        logger.info(f"  Max pages: {max_pages}")
+        logger.info(f"  Headless: {args.headless}")
+        logger.info(f"  Output: {output_path}")
+        
+        try:
+            properties = scraper.scrape_month(
+                year=year,
+                month=month,
+                location_id=args.location_id,
+                max_pages=max_pages
+            )
+            
+            scraper.save_to_csv(properties, output_path)
+            
+            logger.info("✅ Scraping completed successfully!")
+            logger.info(f"📊 Collected {len(properties)} properties")
+            
+        except Exception as e:
+            logger.error(f"❌ Scraping failed: {e}")
+            raise
 
 
 if __name__ == "__main__":

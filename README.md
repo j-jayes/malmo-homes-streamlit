@@ -38,7 +38,30 @@ A comprehensive data pipeline and analytics platform for tracking and analyzing 
 
 ## 🎯 Project Overview
 
-This project scrapes property listings from Hemnet.se, stores them in a DuckDB database, and provides interactive analytics through a modern web interface. The system tracks both active listings and sold properties, maintaining historical price data with inflation adjustment for accurate market analysis.
+This project has **two distinct components** that work together:
+
+### 🏛️ Component 1: Historical Market Analysis
+**One-time backfill of sold properties** to build a comprehensive historical database:
+- Scrape all sold properties (~56k properties dating back to 2020)
+- Build baseline for price trends and neighborhood analysis
+- Train ML models on historical sales data
+- Provides context for current market evaluation
+
+### 🔄 Component 2: Live Market Monitoring
+**Ongoing tracking of active listings** to identify opportunities:
+- Weekly scraping of new listings (~1,500 active properties)
+- Track property lifecycle (listed → price changes → sold)
+- Identify underpriced properties based on historical trends
+- Alert on price drops and market anomalies
+- Compare asking prices to predicted fair value
+
+### 🔗 The Connection
+**Transition Tracking:** When active properties sell, we:
+1. Match sold property to its original listing (by address/ID)
+2. Calculate time-on-market (days from listing to sale)
+3. Analyze asking price vs final price (negotiation insights)
+4. Update our prediction models with fresh data
+5. Validate our "underpriced" predictions against outcomes
 
 ### Key Features
 
@@ -132,18 +155,83 @@ uvicorn app.main:app --reload
 
 ## 📊 Data Pipeline
 
-### 1. Data Collection
+### Component 1: Historical Backfill (One-Time)
 
-**Active Listings:**
-- Weekly scraping of current property listings
-- Smart pagination to handle 2,500+ results per query
-- Rate-limited requests (10 req/min)
-- Cloudflare handling via visible browser
+**Sold Properties Scraper:**
+- 📅 **Time-based filtering** by month (2020-present)
+- 🎯 **Target:** ~56,000 sold properties
+- 📦 **Approach:** Monthly batches (~500 properties each)
+- 💾 **Storage:** Parquet files → DuckDB
+- ⏱️ **Execution:** Run locally or in large GitHub Actions batches
+- 🔄 **Status:** One-time operation, then monthly updates only
 
-**Sold Properties:**
-- Historical sold property data (different URL structure)
-- Final sale prices vs asking prices
-- Days on market calculation
+**Data Extracted:**
+- Final sold price & asking price
+- Sold date & time on market
+- Price change percentage
+- Property details (rooms, area, location, etc.)
+- Coordinates for mapping
+
+### Component 2: Live Monitoring (Ongoing)
+
+**Active Listings Scraper:**
+- 📅 **Weekly scraping** every Sunday
+- 🎯 **Target:** ~1,500 active properties
+- 🔍 **Purpose:** Find underpriced opportunities
+- 📊 **Compare:** Asking price vs predicted fair value
+- 🚨 **Alerts:** Price drops, new listings, anomalies
+
+**Transition Tracking:**
+- 🔗 **Match:** Active listing → Sold property
+- 📈 **Analyze:** Success rate of "underpriced" predictions
+- ⏱️ **Calculate:** Time-on-market, negotiation patterns
+- 🔄 **Update:** Retrain models with fresh sales data
+
+### 1. Data Collection Flow
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  HISTORICAL (One-Time Backfill)                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Sold Properties (2020-2025)                        │  │
+│  │ - Monthly scraping in batches                      │  │
+│  │ - ~56k total properties                            │  │
+│  │ - Final prices + property details                  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                        ↓                                 │
+│           [ DuckDB: sold_properties ]                    │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│  ONGOING (Weekly Updates)                                │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Active Listings (Current)                          │  │
+│  │ - Weekly scraping every Sunday                     │  │
+│  │ - ~1,500 active properties                         │  │
+│  │ - Track asking prices + changes                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                        ↓                                 │
+│           [ DuckDB: active_properties ]                  │
+│                        ↓                                 │
+│              [ ML Model Prediction ]                     │
+│                        ↓                                 │
+│        [ Identify Underpriced Properties ]               │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│  TRANSITION (Weekly Check)                               │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Match: Active → Sold                               │  │
+│  │ - Find properties that sold this week              │  │
+│  │ - Link to original listing                         │  │
+│  │ - Validate predictions                             │  │
+│  └────────────────────────────────────────────────────┘  │
+│                        ↓                                 │
+│         [ DuckDB: property_transitions ]                 │
+│                        ↓                                 │
+│           [ Update ML Models & Metrics ]                 │
+└──────────────────────────────────────────────────────────┘
+```
 
 ### 2. Data Storage
 
@@ -236,30 +324,57 @@ uvicorn app.main:app --reload
 
 ### Project Phases
 
-1. **Phase 1: Simple Link Collection** ✅
-   - Single page scraping
-   - Basic pagination
-   - CSV export
+#### 🏛️ Historical Component
 
-2. **Phase 2: Smart Filtering Strategy** 🚧
-   - Handle 2,500 result limit
-   - Hierarchical filter splitting
-   - Full coverage of Malmö
+1. **Phase 1A: Link Collection (Sold)** ✅
+   - Time-based filtering by month
+   - Pagination handling
+   - CSV export with property URLs
 
-3. **Phase 3: Database Integration** ⏳
-   - DuckDB schema design
-   - Data validation pipeline
-   - Historical tracking
+2. **Phase 1B: Historical Data Scraping** 🚧
+   - Unified property scraper (sold + active)
+   - Extract all sold property details
+   - Batch processing (100 properties at a time)
+   - Parquet storage for efficiency
 
-4. **Phase 4: Analytics & ML** ⏳
-   - Price prediction model
-   - Trend analysis
-   - Neighborhood profiling
+3. **Phase 1C: Historical Database** ⏳
+   - Load ~56k sold properties to DuckDB
+   - Build price history tables
+   - Neighborhood aggregations
+   - ML model training dataset
 
-5. **Phase 5: Web Interface** ⏳
-   - Streamlit MVP
-   - FastAPI + React migration
-   - Interactive maps
+#### 🔄 Live Monitoring Component
+
+4. **Phase 2A: Active Listings Scraping** ⏳
+   - Weekly automated collection
+   - Track price changes over time
+   - Store in separate active_properties table
+
+5. **Phase 2B: Price Prediction** ⏳
+   - Train ML model on historical sales
+   - Predict fair value for active listings
+   - Identify underpriced properties
+   - Generate weekly opportunity reports
+
+6. **Phase 2C: Transition Tracking** ⏳
+   - Match active → sold properties
+   - Calculate time-on-market
+   - Validate prediction accuracy
+   - Update models with new data
+
+#### 📊 Analytics & Interface
+
+7. **Phase 3A: Analytics Dashboard** ⏳
+   - Historical market trends
+   - Current market snapshot
+   - Underpriced property alerts
+   - Prediction accuracy metrics
+
+8. **Phase 3B: Web Interface** ⏳
+   - Streamlit MVP (rapid prototyping)
+   - FastAPI + React (production)
+   - Interactive maps and filters
+   - Email/SMS alerts for opportunities
 
 ### Testing
 

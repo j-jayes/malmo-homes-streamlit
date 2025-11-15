@@ -1,7 +1,34 @@
 # Project Status: Malmö Housing Market Analyzer
 
 **Date:** 2025-11-15  
-**Status:** Production-Ready ✅
+**Status:** Phase 1B Planning Complete ✅
+
+---
+
+## 🎯 Project Components Overview
+
+This project consists of **two distinct but connected components**:
+
+### 🏛️ Component 1: Historical Market Database
+**Purpose:** Build comprehensive historical dataset for baseline analysis
+- **Target:** ~56,000 sold properties (2020-present)
+- **Frequency:** One-time backfill, then monthly updates
+- **Data:** Final sale prices, property details, market trends
+- **Use Case:** Train ML models, establish price benchmarks
+
+### 🔄 Component 2: Live Market Monitoring  
+**Purpose:** Track active listings and identify opportunities
+- **Target:** ~1,500 active listings (current market)
+- **Frequency:** Weekly updates every Sunday
+- **Data:** Asking prices, property details, price changes
+- **Use Case:** Find underpriced properties, price drop alerts
+
+### 🔗 Component 3: Transition Tracking
+**Purpose:** Connect active listings to final sales
+- **Process:** Match active → sold properties by address/ID
+- **Analysis:** Time-on-market, asking vs final price
+- **Validation:** Test prediction accuracy against outcomes
+- **Learning:** Retrain models with fresh data
 
 ---
 
@@ -172,27 +199,137 @@ All workflows follow 2025 best practices:
 
 ---
 
-## 🎯 Next Steps
+## 🎯 Next Steps by Component
 
-### Phase 1: Immediate (This Week)
-- [x] Create sold properties scraper ✅
-- [x] Test locally (headed & headless) ✅
-- [x] Create GitHub Actions workflow ✅
-- [ ] Enable GitHub Pages
-- [ ] Test workflow in Actions (manual trigger)
+### 🏛️ Component 1: Historical Database (Phase 1)
 
-### Phase 2: First Month
-- [ ] Monitor first automated runs
+#### Phase 1A: Link Collection ✅ COMPLETE
+- [x] Create sold properties link scraper ✅
+- [x] Time-based filtering (by month) ✅
+- [x] Pagination handling ✅
+- [x] Test locally (100 properties in 2 pages) ✅
+
+#### Phase 1B: Property Detail Scraping 🚧 PLANNING COMPLETE
+- [x] Analyze sold vs active property differences ✅
+- [x] Design unified data schema ✅
+- [x] Plan storage strategy (Parquet + DuckDB) ✅
+- [x] Create architecture documents ✅
+
+**Documents Created:**
+- `2025-11-15-unified-scraper-architecture.md` - Full technical spec
+- `2025-11-15-property-scraper-implementation.md` - Implementation checklist
+- `2025-11-15-property-scraper-summary.md` - Executive summary
+- `2025-11-15-architecture-diagrams.md` - Visual diagrams
+
+**Next Tasks (9 hours):**
+- [ ] Create Pydantic models for both property types (1h)
+- [ ] Extend property_scraper.py for sold properties (3h)
+- [ ] Implement batch processing system (2h)
+- [ ] Create CLI interface (1h)
+- [ ] Write comprehensive test suite (1h)
+- [ ] Integration testing on 100 properties (1h)
+
+#### Phase 1C: Historical Backfill ⏳ PLANNED
+- [ ] Scrape all 56k sold properties (monthly batches)
+- [ ] Load into DuckDB database
 - [ ] Validate data quality
-- [ ] Create data validation script
-- [ ] Set up DuckDB database schema
-- [ ] Begin historical backfill (local)
+- [ ] Create historical analysis views
 
-### Phase 3: Scale Up
+**Execution Strategy:**
+- Run locally in batches (less GitHub Actions minutes)
+- ~60 months × 10 min = ~10 hours total
+- Or: GitHub Actions with smart batching
+
+---
+
+### 🔄 Component 2: Live Monitoring (Phase 2)
+
+#### Phase 2A: Active Listings Workflow ⏳ FUTURE
+- [ ] Adapt scraper for active listings
+- [ ] Set up weekly GitHub Actions
+- [ ] Create active_properties table
+- [ ] Track price changes over time
+
+#### Phase 2B: Price Prediction ⏳ FUTURE
+- [ ] Train ML model on historical sales
+- [ ] Predict fair value for active listings
+- [ ] Identify underpriced properties (>10% below prediction)
+- [ ] Generate weekly opportunity reports
+
+#### Phase 2C: Transition Tracking ⏳ FUTURE
+- [ ] Matching algorithm (active → sold)
+- [ ] Time-on-market calculation
+- [ ] Asking vs final price analysis
+- [ ] Prediction accuracy validation
+- [ ] Model retraining pipeline
+
+**Matching Strategy:**
+```python
+# Match by multiple fields for robustness
+match = (
+    same_address AND
+    same_area (±5%) AND
+    sold_date > listing_date AND
+    sold_date < listing_date + 6 months
+)
+```
+
+---
+
+### 📊 Component 3: Analytics (Phase 3) ⏳ FUTURE
+
+#### Dashboard Features
+- Historical market trends (from sold data)
+- Current market snapshot (from active data)
+- Underpriced property alerts
+- Price prediction accuracy metrics
+- Time-on-market analysis
+- Neighborhood comparisons
+
+---
+
+## 📅 Implementation Timeline
+
+### Week 1 (Current)
+- ✅ Planning & architecture design
+- 🚧 Build unified property scraper
+- 🚧 Implement batch processing
+- 🚧 Test on sample properties
+
+### Week 2-3
+- ⏳ Historical backfill (56k sold properties)
+- ⏳ Database optimization
+- ⏳ Data validation & cleaning
+
+### Week 4
+- ⏳ ML model development
+- ⏳ Active listings workflow
+- ⏳ Weekly automation setup
+
+### Month 2
+- ⏳ Transition tracking implementation
+- ⏳ Analytics dashboard
+- ⏳ Streamlit MVP
+
+### Phase 3: DuckDB Integration
+- [ ] Design database schema
+- [ ] Create Parquet → DuckDB loader
+- [ ] Implement incremental updates
+- [ ] Add query utilities
+- [ ] Test data integrity
+
+### Phase 4: GitHub Actions Updates
+- [ ] Update workflows for batch processing
+- [ ] Implement batch commit strategy
+- [ ] Add resume capability
+- [ ] Test in Actions environment
+- [ ] Enable GitHub Pages
+
+### Phase 5: Scale Up
+- [ ] Begin historical backfill (56k properties)
 - [ ] Expand to Stockholm & Gothenburg
-- [ ] Implement smart filtering for >2,500 results
 - [ ] Create FastAPI endpoints
-- [ ] Build React frontend
+- [ ] Build Streamlit dashboard
 - [ ] Generate first Quarto reports
 
 ---
