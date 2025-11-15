@@ -172,9 +172,10 @@ cython_debug/
 
 # Project-specific ignores
 
-# Data files (large)
-data/raw/*.csv
+# Data files (large - keep raw CSVs under 10MB, exclude larger files)
+# data/raw/*.csv  # Commented out - we want to track scraped CSVs
 data/raw/*.json
+!data/.hemnet_session.json  # Keep session file for Cloudflare
 data/raw/*.parquet
 data/processed/*.parquet
 data/database/*.duckdb
