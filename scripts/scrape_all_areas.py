@@ -140,24 +140,27 @@ class AdaptiveAreaScraper:
             logger.error(f"❌ Error scraping range {area_min}-{area_max}m²: {e}")
             raise
     
-    def scrape_all(self, initial_step: int = 50, max_pages: int = 50):
+    def scrape_all(self, initial_step: int = 50, max_pages: int = 50, min_area: int = 0, max_area_limit: int = 500):
         """
         Scrape all properties by adaptively iterating through area ranges
         
         Args:
             initial_step: Initial step size for area ranges (m²)
             max_pages: Maximum pages to scrape per range
+            min_area: Starting living area (m²)
+            max_area_limit: Maximum living area to scrape up to (m²)
         """
         
         logger.info("🚀 Starting adaptive area scraping")
         logger.info(f"Location ID: {self.location_id}")
         logger.info(f"Output directory: {self.output_dir}")
         logger.info(f"Initial step size: {initial_step}m²")
+        logger.info(f"Area range: {min_area}-{max_area_limit}m²")
         
-        min_area = 0
+        min_area_current = min_area
         all_properties = []
         
-        while min_area < self.MAX_AREA:
+        while min_area_current < max_area_limit:
             # Calculate initial max for this iteration
             initial_max = min_area + initial_step
             
@@ -228,6 +231,10 @@ def main():
                        help='Initial step size in m² (default: 50)')
     parser.add_argument('--max-pages', type=int, default=50,
                        help='Maximum pages per range (default: 50)')
+    parser.add_argument('--min-area', type=int, default=0,
+                       help='Starting living area in m² (default: 0)')
+    parser.add_argument('--max-area', type=int, default=500,
+                       help='Ending living area in m² (default: 500)')
     parser.add_argument('--output-dir', type=str,
                        help='Output directory for range files')
     parser.add_argument('--headless', action='store_true',
@@ -254,7 +261,9 @@ def main():
         try:
             scraper.scrape_all(
                 initial_step=args.initial_step,
-                max_pages=args.max_pages
+                max_pages=args.max_pages,
+                min_area=args.min_area,
+                max_area_limit=args.max_area
             )
             
             # Consolidate results

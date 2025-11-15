@@ -3,6 +3,16 @@ name: Scrape All Sold Properties (Area-Based)
 on:
   workflow_dispatch:
     inputs:
+      min_area:
+        description: 'Min living area (m²) - for testing use 400'
+        required: false
+        type: number
+        default: 0
+      max_area:
+        description: 'Max living area (m²) - for testing use 500'
+        required: false
+        type: number
+        default: 500
       initial_step:
         description: 'Initial step size (m²)'
         required: false
@@ -73,11 +83,14 @@ jobs:
           
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "Starting adaptive area-based scraping"
+          echo "Area range: ${{ github.event.inputs.min_area }}-${{ github.event.inputs.max_area }}m²"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
           # Run adaptive area scraper
           python scripts/scrape_all_areas.py \
             --headless \
+            --min-area ${{ github.event.inputs.min_area }} \
+            --max-area ${{ github.event.inputs.max_area }} \
             --initial-step ${{ github.event.inputs.initial_step }} \
             --max-pages ${{ github.event.inputs.max_pages }} \
             --output-dir data/raw/area_ranges || {
