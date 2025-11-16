@@ -29,7 +29,7 @@ class AdaptiveAreaScraper:
     
     RESULT_LIMIT = 2500
     SAFE_LIMIT = 2400  # Stay under limit with margin
-    MIN_STEP = 5  # Minimum step size in m²
+    MIN_STEP = 1  # Minimum step size in m² (was 5, but dense areas need finer granularity)
     MAX_AREA = 500  # Maximum reasonable apartment size
     
     def __init__(self, location_id: str = "17989", headless: bool = True, output_dir: Path = None):
@@ -103,6 +103,7 @@ class AdaptiveAreaScraper:
         low = min_area + self.MIN_STEP
         high = min(initial_max, self.MAX_AREA)
         best_max = low
+        best_count = 0
         
         while low <= high:
             mid = (low + high) // 2
@@ -125,9 +126,10 @@ class AdaptiveAreaScraper:
             else:
                 # Good range, try to expand
                 best_max = mid
+                best_count = count
                 low = mid + 1
         
-        logger.info(f"✅ Optimal range: {min_area}-{best_max}m² ({count} results)")
+        logger.info(f"✅ Optimal range: {min_area}-{best_max}m² ({best_count} results)")
         return min_area, best_max
     
     def scrape_range(self, area_min: int, area_max: int, max_pages: int = 50) -> List[Dict]:
