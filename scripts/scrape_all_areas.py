@@ -6,6 +6,8 @@ Automatically iterates through all living area ranges, adapting step size to avo
 import argparse
 import json
 import logging
+import os
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -69,6 +71,40 @@ class AdaptiveAreaScraper:
         self.progress['completed_ranges'].append(range_key)
         self.progress['total_properties'] += property_count
         self._save_progress()
+    
+    def _git_commit_progress(self, area_min: int, area_max: int):
+        """Commit and push progress after completing a range (if in CI environment)"""
+        # Only commit if we're in a CI environment (GitHub Actions)
+        if not os.environ.get('CI'):
+            logger.debug("Not in CI environment, skipping git commit")
+            return
+        
+        try:
+            logger.info(f"💾 Committing progress for range {area_min}-{area_max}m²...")
+            
+            # Add files
+            subprocess.run(['git', 'add', 'data/raw/area_ranges/*.csv', 'data/raw/area_ranges/*.json'], 
+                         check=False, capture_output=True)
+            
+            # Check if there are changes
+            result = subprocess.run(['git', 'diff', '--staged', '--quiet'], 
+                                  capture_output=True)
+            
+            if result.returncode != 0:  # There are staged changes
+                # Commit
+                subprocess.run(['git', 'commit', '-m', f'data: scraped area range {area_min}-{area_max}m²'], 
+                             check=True, capture_output=True)
+                
+                # Push
+                subprocess.run(['git', 'push'], check=True, capture_output=True)
+                logger.info(f"✅ Committed and pushed range {area_min}-{area_max}m²")
+            else:
+                logger.debug("No changes to commit")
+                
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"⚠️  Git commit/push failed: {e}. Continuing anyway...")
+        except Exception as e:
+            logger.warning(f"⚠️  Unexpected error during git operations: {e}")
     
     def find_optimal_range(self, min_area: int, initial_max: int) -> Tuple[int, int]:
         """
@@ -156,6 +192,9 @@ class AdaptiveAreaScraper:
             
             # Mark as completed
             self._mark_range_completed(area_min, area_max, len(properties))
+            
+            # Commit progress if in CI
+            self._git_commit_progress(area_min, area_max)
             
             logger.info(f"✅ Completed range {area_min}-{area_max}m²: {len(properties)} properties")
             return properties
