@@ -44,7 +44,8 @@
    - The GitHub Actions runner consumes only staging manifests, keeping raw captures immutable and simplifying retries.
    - Each scrape publishes hashed property IDs to a progress cache so subsequent runs can skip already-enriched listings regardless of staging contents.
 - **Stage 3 — Processed Store (`data/processed/property_details/`)**
-   - Persist parquet outputs + metadata per batch; once a batch passes validation, move its manifest entry from staging to `data/archive/staged/` so unprocessed work remains visible.
+   - Persist parquet outputs + metadata per batch inside deterministic run directories (e.g., `data/processed/property_details/gha_runs/20251122T2145Z`).
+   - Once a batch passes validation, move its manifest entry from staging to `data/archive/staged/` so unprocessed work remains visible.
    - Downstream modelling/analytics jobs read exclusively from processed data, never from staging or raw.
 - **Stage 4 — Analytics & Reporting**
    - Feature engineering, ML training, and dashboards rely on the processed store, ensuring reproducibility.
@@ -90,10 +91,32 @@
  10. **Upload artifacts** with `actions/upload-artifact@v4` (parquet, metadata, failure CSVs, raw subset CSV, playwright trace/logs if we persist them).
  11. **Post run summary** appended to `$GITHUB_STEP_SUMMARY` (counts, notable errors, artifact links).
 
+### Repository persistence add-on (2025-11-22 update)
+
+- After successful scraping and validation, the job writes the generated parquet outputs + metadata into `data/processed/property_details/gha_runs/<timestamp>/` before committing.
+- Configure `permissions: contents: write` for `scrape-details` and reuse `${{ secrets.GITHUB_TOKEN }}` so the workflow can `git commit` + `git push` without a PAT, following GitHub's [automatic token authentication guidance](https://docs.github.com/en/actions/security-guides/automatic-token-authentication).
+- Commit message format: `ci: ingest property details <timestamp> (<source_csv> offset=<offset> max=<max_records>)`.
+- Upload artifacts even after committing so we retain zipped copies + logs outside the repo history.
+
 ### Resiliency Considerations
 - Wrap main scraping step with `set -e` + custom trap to upload partial artifacts and exit 1 if success rate < threshold.
 - Use `concurrency: property-detail-runner` to prevent overlapping expensive scraping jobs.
 - Keep `permissions: contents: read` until we are ready to push data commits.
+
+## 📂 Repo Storage Strategy (2025-11-22 update)
+
+- **Destination layout** — `data/processed/property_details/gha_runs/<YYYYMMDDTHHMMSSZ>/` containing `batch_*.parquet`, `metadata.json`, `failures.csv`, and the post-run `progress_cache.json` snapshot for auditability.
+- **Run index** — maintain `data/processed/property_details/gha_runs/index.jsonl` with one JSON document per workflow invocation recording timestamp, `source_csv`, offsets, `max_records`, success metrics, and artifact URL.
+- **Idempotency** — if a folder for the timestamp already exists, append `-retryN` to the directory name rather than overwriting; leverage the hashed progress cache to skip properties already persisted.
+- **Git hygiene** — ensure `.gitignore` allows the processed run directories while temporary Playwright traces remain ignored under `data/tmp/`. Only commit curated parquet + metadata artifacts.
+- **Automation** — workflow runs `git add data/processed/property_details/gha_runs` + `git add data/processed/property_details/gha_runs/index.jsonl`, commits, and pushes using `${{ secrets.GITHUB_TOKEN }}` scoped with `contents: write`.
+
+## 🚀 Upcoming 100-property Run Plan
+
+- **Inputs** — `source_csv=data/raw/area_ranges/properties_0_31.csv`, `offset=0`, `max_records=100`, `batch_size=10`, `headless=true`.
+- **Output expectations** — new folder `data/processed/property_details/gha_runs/20251122T2215Z/` (timestamp captured via `date -u +%Y%m%dT%H%M%SZ`) plus index entry summarizing counts + artifact link.
+- **Success guardrail** — workflow fails fast if success rate falls below 90% or more than 5 consecutive failures occur, preventing noisy commits.
+- **Monitoring** — `gh run watch <run_id>` tailors logs; step metrics appended to `$GITHUB_STEP_SUMMARY` for asynchronous review.
 
 ---
 
@@ -139,3 +162,4 @@ _This document will be updated as we execute each checklist item and capture run
 - 2025-11-22 — First run on `main` failed mid-job due to missing `pyarrow`; resolved by promoting `pyarrow` to core dependencies and re-installing via `uv pip install -e .[scraping]`.
 - 2025-11-22 — Second run reached summary step but crashed with `IndentationError` when writing to `$GITHUB_STEP_SUMMARY`; fixed indentation in `.github/workflows/property_detail_runner.yml` and ready to re-dispatch.
 - 2025-11-22 — Third run hit a `SyntaxError` in `progress_tracker.py` (leftover Markdown fence); removed the stray characters so the module imports cleanly before retrying.
+- 2025-11-22 — Fourth run (ID `19601674979`) completed successfully for 5 records: 100% success rate, new artifacts archived, validated Playwright/Xvfb stack.

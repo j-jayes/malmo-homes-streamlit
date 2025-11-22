@@ -39,7 +39,7 @@ on:
           - WARNING
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: property-detail-runner
@@ -53,6 +53,12 @@ jobs:
       PYTHONUNBUFFERED: "1"
       SCRAPE_OUTPUT: data/gha_property_batches
       SUBSET_CSV: data/tmp/gha_property_subset.csv
+      PROCESSED_ROOT: data/processed/property_details/gha_runs
+      RUN_INDEX: data/processed/property_details/gha_runs/index.jsonl
+      INPUT_SOURCE_CSV: ${{ inputs.source_csv }}
+      INPUT_OFFSET: ${{ inputs.offset }}
+      INPUT_MAX_RECORDS: ${{ inputs.max_records }}
+      INPUT_BATCH_SIZE: ${{ inputs.batch_size }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -92,6 +98,11 @@ jobs:
         run: |
           mkdir -p "$SCRAPE_OUTPUT"
           mkdir -p "$(dirname "$SUBSET_CSV")"
+          mkdir -p "$PROCESSED_ROOT"
+
+      - name: Capture run timestamp
+        id: run_timestamp
+        run: echo "utc=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Run batch scraper
         id: scrape
@@ -117,10 +128,6 @@ jobs:
       - name: Summarize results
         if: always()
         id: summary
-        env:
-          INPUT_SOURCE_CSV: ${{ inputs.source_csv }}
-          INPUT_OFFSET: ${{ inputs.offset }}
-          INPUT_MAX_RECORDS: ${{ inputs.max_records }}
         run: |
           source .venv/bin/activate
           uv run python - <<'PY'
@@ -152,6 +159,77 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
               fh.write("\n".join(summary_lines) + "\n")
           PY
+
+      - name: Persist processed outputs to repo
+        if: ${{ success() }}
+        env:
+          RUN_TIMESTAMP: ${{ steps.run_timestamp.outputs.utc }}
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          metadata_path="$SCRAPE_OUTPUT/metadata.json"
+          if [ ! -f "$metadata_path" ]; then
+            echo "No metadata generated; skipping persistence."
+            exit 0
+          fi
+          run_dir="$PROCESSED_ROOT/$RUN_TIMESTAMP"
+          if [ -d "$run_dir" ]; then
+            idx=1
+            while [ -d "${run_dir}-retry${idx}" ]; do
+              idx=$((idx+1))
+            done
+            run_dir="${run_dir}-retry${idx}"
+          fi
+          mkdir -p "$run_dir"
+          rsync -a "$SCRAPE_OUTPUT"/ "$run_dir"/
+          export RUN_DIR="$run_dir"
+          uv run python - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          run_dir = pathlib.Path(os.environ["RUN_DIR"])
+          metadata_path = run_dir / "metadata.json"
+          if not metadata_path.exists():
+              raise SystemExit("Persisted metadata missing; cannot update index.")
+
+          metadata = json.loads(metadata_path.read_text())
+          index_path = pathlib.Path(os.environ["RUN_INDEX"])
+          index_path.parent.mkdir(parents=True, exist_ok=True)
+
+          record = {
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "timestamp": os.environ["RUN_TIMESTAMP"],
+              "source_csv": os.environ["INPUT_SOURCE_CSV"],
+              "offset": int(float(os.environ["INPUT_OFFSET"])),
+              "max_records": int(float(os.environ["INPUT_MAX_RECORDS"])),
+              "batch_size": int(float(os.environ["INPUT_BATCH_SIZE"])),
+              "processed": metadata.get("total_processed", 0),
+              "successful": metadata.get("total_successful", 0),
+              "failed": metadata.get("total_failed", 0),
+              "output_path": str(run_dir),
+              "artifact_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }
+
+          with index_path.open("a", encoding="utf-8") as fh:
+              fh.write(json.dumps(record) + "\n")
+          PY
+
+      - name: Commit processed data
+        if: ${{ success() }}
+        env:
+          RUN_TIMESTAMP: ${{ steps.run_timestamp.outputs.utc }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$PROCESSED_ROOT"
+          if git diff --cached --quiet; then
+            echo "No processed data changes to commit."
+            exit 0
+          fi
+          git commit -m "ci: ingest property details ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET} max=${INPUT_MAX_RECORDS})"
+          git push
 
       - name: Upload artifacts
         if: always()

@@ -180,6 +180,9 @@ data/raw/*.parquet
 data/processed/*.parquet
 data/database/*.duckdb
 data/database/*.db
+!data/processed/property_details/
+!data/processed/property_details/gha_runs/
+!data/processed/property_details/gha_runs/**
 
 # Keep example files
 !data/raw/.gitkeep
