@@ -83,4 +83,3 @@ class ProgressTracker:
     @property
     def count(self) -> int:
         return len(self._identifiers)
-```}
