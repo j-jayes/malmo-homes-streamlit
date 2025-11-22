@@ -35,6 +35,25 @@
 
 ---
 
+## 🔄 Pipeline Refinement Plan (2025-11-22 review)
+
+- **Stage 1 — Link Capture (`data/raw/area_ranges/` + rolling feeds)**
+   - Keep the existing link collectors focused on high-volume acquisition.
+   - Immediately copy fresh batches into `data/staging/property_links/` with a manifest that records source CSV, ingestion timestamp, and SHA-256 digest so we can detect drift.
+- **Stage 2 — Detail Scrape in Actions**
+   - The GitHub Actions runner consumes only staging manifests, keeping raw captures immutable and simplifying retries.
+   - Each scrape publishes hashed property IDs to a progress cache so subsequent runs can skip already-enriched listings regardless of staging contents.
+- **Stage 3 — Processed Store (`data/processed/property_details/`)**
+   - Persist parquet outputs + metadata per batch; once a batch passes validation, move its manifest entry from staging to `data/archive/staged/` so unprocessed work remains visible.
+   - Downstream modelling/analytics jobs read exclusively from processed data, never from staging or raw.
+- **Stage 4 — Analytics & Reporting**
+   - Feature engineering, ML training, and dashboards rely on the processed store, ensuring reproducibility.
+- **Operational guardrails**
+   - Workflow inputs reference staging manifests, GH summaries surface metrics, and artifacts carry everything required for local replay.
+   - Progress cache + staging separation provide idempotency and a clean audit trail of what remains to scrape.
+
+---
+
 ## 🛠️ Workflow Specification (draft)
 
 ### Trigger + Inputs
@@ -80,13 +99,16 @@
 
 ## ✅ Task Checklist
 
-1. [ ] Create lightweight CLI (`src/scrapers/batch_manager_cli.py`) exposing `--input`, `--output`, `--max-records`, `--offset`, `--batch-size`, `--headless` arguments and delegating to `BatchManager`.
+1. [x] Create lightweight CLI (`src/scrapers/batch_manager_cli.py`) exposing `--input`, `--output`, `--max-records`, `--offset`, `--batch-size`, `--headless` arguments and delegating to `BatchManager`.
 2. [ ] Author helper script (`scripts/select_property_subset.py` or inline Python step) that copies filtered rows into `data/tmp/gha_property_subset.csv` with deterministic ordering.
-3. [ ] Draft workflow `.github/workflows/property_detail_runner.yml` implementing the spec above.
+3. [x] Draft workflow `.github/workflows/property_detail_runner.yml` implementing the spec above.
 4. [ ] Add structured logging (JSON or key=value) inside CLI to make GH logs greppable (e.g., `SCRAPE_METRIC total_processed=10 success=9 failed=1`).
 5. [ ] Document environment expectations inside `README` (how to invoke workflow via CLI, required secrets if any).
 6. [ ] Dry-run locally with `uv run python src/scrapers/batch_manager_cli.py --input data/raw/area_ranges/properties_0_31.csv --max-records 5 --output data/tmp/dry_run` to confirm subset + metadata behavior before shipping workflow.
 7. [ ] Configure artifact retention (7 days for smoke tests) and ensure failure CSVs are included for debugging.
+8. [ ] Trigger `property_detail_runner` workflow via `gh` with ≤5 records to validate remote execution path.
+9. [ ] Record run findings (success metrics, failures, artifact locations) back into this checklist for traceability.
+10. [x] Add hashed progress cache + CLI skip flag so reruns avoid already processed properties.
 
 ---
 
@@ -110,3 +132,7 @@
 ---
 
 _This document will be updated as we execute each checklist item and capture run findings._
+
+## 📝 Run Log
+
+- 2025-11-22 — `gh workflow run property_detail_runner.yml --ref feature/property-detail-runner ...` failed with `HTTP 404` because GitHub only registers `workflow_dispatch` definitions that live on the default branch. Reference: [Manually running a workflow](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow). Next step: raise a PR and land the workflow on `main`, then re-trigger the canary run.

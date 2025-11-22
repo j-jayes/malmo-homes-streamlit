@@ -14,6 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from src.scrapers.property_detail_scraper import PropertyScraper
+from src.scrapers.progress_tracker import ProgressTracker
 from src.models.property_schema import BaseProperty, SoldProperty, ForSaleProperty
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ class BatchManager:
         input_file: Path,
         output_dir: Path,
         batch_size: int = 100,
-        headless: bool = True
+        headless: bool = True,
+        progress_tracker: ProgressTracker | None = None,
     ):
         """
         Initialize batch manager.
@@ -42,6 +44,7 @@ class BatchManager:
         self.output_dir = Path(output_dir)
         self.batch_size = batch_size
         self.headless = headless
+        self.progress_tracker = progress_tracker
         
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -72,6 +75,8 @@ class BatchManager:
         """Save processing metadata to file."""
         with open(self.metadata_file, 'w') as f:
             json.dump(self.metadata, f, indent=2)
+        if self.progress_tracker:
+            self.progress_tracker.save()
     
     def _read_urls(self) -> List[Dict[str, str]]:
         """
@@ -81,15 +86,21 @@ class BatchManager:
             List of dicts with at least 'url' key
         """
         urls = []
+        skipped = 0
         with open(self.input_file, newline='', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 if 'url' in row:
+                    if self.progress_tracker and self.progress_tracker.should_skip(row):
+                        skipped += 1
+                        continue
                     urls.append(row)
                 else:
                     logger.warning(f"Row missing 'url' column: {row}")
         
         logger.info(f"Loaded {len(urls)} URLs from {self.input_file}")
+        if skipped:
+            logger.info("Skipping %s URLs already present in progress cache", skipped)
         return urls
     
     def _property_to_dict(self, prop: BaseProperty) -> Dict:
@@ -175,6 +186,11 @@ class BatchManager:
                 if property_data:
                     successful.append(property_data)
                     logger.info(f"  ✓ Success: {property_data.address}")
+                    if self.progress_tracker:
+                        self.progress_tracker.record_success(
+                            property_id=property_data.property_id,
+                            url=property_data.url,
+                        )
                 else:
                     failed.append({**record, 'error': 'No data returned'})
                     logger.error(f"  ✗ Failed: No data returned")

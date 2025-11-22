@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Tuple
 
 from src.scrapers.batch_manager import BatchManager
+from src.scrapers.progress_tracker import ProgressTracker
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,8 @@ def slice_csv_subset(
     subset_path: Path,
     offset: int = 0,
     max_records: int = 0,
-) -> Tuple[int, int]:
+    tracker: ProgressTracker | None = None,
+) -> Tuple[int, int, int]:
     """Copy a window of rows from ``input_csv`` into ``subset_path``.
 
     Args:
@@ -41,7 +43,7 @@ def slice_csv_subset(
         max_records: Maximum rows to copy after the offset; ``0`` means no limit.
 
     Returns:
-        Tuple of (total_rows_in_source, rows_written_to_subset).
+        Tuple of (total_rows_in_source, rows_written_to_subset, rows_skipped_via_tracker).
     """
     input_csv = input_csv.expanduser().resolve()
     subset_path = subset_path.expanduser().resolve()
@@ -50,6 +52,7 @@ def slice_csv_subset(
     skipped = 0
     written = 0
     total = 0
+    cache_skipped = 0
     limit = max_records if max_records and max_records > 0 else None
 
     with input_csv.open("r", encoding="utf-8", newline="") as src, subset_path.open(
@@ -65,8 +68,11 @@ def slice_csv_subset(
             if skipped < offset:
                 skipped += 1
                 continue
-            if limit is not None and written >= limit:
+            if tracker and tracker.should_skip(row):
+                cache_skipped += 1
                 continue
+            if limit is not None and written >= limit:
+                break
 
             writer.writerow(row)
             written += 1
@@ -79,7 +85,9 @@ def slice_csv_subset(
         max_records,
         subset_path,
     )
-    return total, written
+    if cache_skipped:
+        logger.info("Skipped %s rows already present in progress cache", cache_skipped)
+    return total, written, cache_skipped
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -130,6 +138,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run Playwright in headed mode for debugging",
     )
+    parser.add_argument(
+        "--progress-cache",
+        type=Path,
+        help="Path to progress cache file (default: <output-dir>/progress_cache.json)",
+    )
+    parser.add_argument(
+        "--skip-processed",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Skip rows already tracked as processed (default: true)",
+    )
     return parser
 
 
@@ -153,11 +172,22 @@ def main(argv: list[str] | None = None) -> int:
         else output_dir / "subset.csv"
     )
 
-    total_rows, subset_rows = slice_csv_subset(
+    tracker: ProgressTracker | None = None
+    if args.skip_processed:
+        cache_path = (
+            args.progress_cache.expanduser().resolve()
+            if args.progress_cache
+            else output_dir / "progress_cache.json"
+        )
+        tracker = ProgressTracker(cache_path)
+        logger.info("Loaded %s processed identifiers from %s", tracker.count, cache_path)
+
+    total_rows, subset_rows, cache_skipped = slice_csv_subset(
         input_csv=input_csv,
         subset_path=subset_path,
         offset=max(args.offset, 0),
         max_records=max(args.max_records, 0),
+        tracker=tracker,
     )
 
     if subset_rows == 0:
@@ -174,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         output_dir=output_dir,
         batch_size=max(args.batch_size, 1),
         headless=not args.show_browser,
+        progress_tracker=tracker,
     )
 
     try:
@@ -191,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         "processed": metadata.get("total_processed", 0),
         "successful": metadata.get("total_successful", 0),
         "failed": metadata.get("total_failed", 0),
+        "skipped_from_cache": cache_skipped,
     }
     logger.info("SCRAPE_METRIC %s", json.dumps(metrics))
     success_rate = (
@@ -201,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
         else 0.0
     )
     logger.info("Success rate: %.1f%%", success_rate)
+    if tracker:
+        tracker.save()
     return 0 if metadata.get("total_failed", 0) == 0 else 1
 
 
