@@ -1,0 +1,165 @@
+name: Property Detail Scraper
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_csv:
+        description: "CSV file with property URLs (e.g. data/raw/area_ranges/properties_0_31.csv)"
+        required: true
+        default: data/raw/area_ranges/properties_0_31.csv
+        type: string
+      max_records:
+        description: "Maximum records to scrape after offset"
+        required: false
+        default: 5
+        type: number
+      offset:
+        description: "Number of rows to skip before scraping"
+        required: false
+        default: 0
+        type: number
+      batch_size:
+        description: "Properties per batch"
+        required: false
+        default: 5
+        type: number
+      headless:
+        description: "Run browser in headless mode"
+        required: false
+        default: true
+        type: boolean
+      log_level:
+        description: "Log level for CLI"
+        required: false
+        default: INFO
+        type: choice
+        options:
+          - DEBUG
+          - INFO
+          - WARNING
+
+permissions:
+  contents: read
+
+concurrency:
+  group: property-detail-runner
+  cancel-in-progress: false
+
+jobs:
+  scrape-details:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
+      SCRAPE_OUTPUT: data/gha_property_batches
+      SUBSET_CSV: data/tmp/gha_property_subset.csv
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Install project dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e ".[scraping]"
+
+      - name: Install Playwright browsers
+        run: |
+          source .venv/bin/activate
+          playwright install chromium --with-deps
+
+      - name: Start virtual display (Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1920x1080x24 > /tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Prepare directories
+        run: |
+          mkdir -p "$SCRAPE_OUTPUT"
+          mkdir -p "$(dirname "$SUBSET_CSV")"
+
+      - name: Run batch scraper
+        id: scrape
+        env:
+          DISPLAY: ${{ env.DISPLAY }}
+        run: |
+          source .venv/bin/activate
+          HEADLESS_FLAG="${{ inputs.headless }}"
+          EXTRA_FLAGS=""
+          if [ "$HEADLESS_FLAG" = 'false' ]; then
+            EXTRA_FLAGS="--show-browser"
+          fi
+          uv run python -m src.scrapers.batch_manager_cli \
+            --input "${{ inputs.source_csv }}" \
+            --output-dir "$SCRAPE_OUTPUT" \
+            --batch-size "${{ inputs.batch_size }}" \
+            --offset "${{ inputs.offset }}" \
+            --max-records "${{ inputs.max_records }}" \
+            --subset-output "$SUBSET_CSV" \
+            --log-level "${{ inputs.log_level }}" \
+            $EXTRA_FLAGS
+
+      - name: Summarize results
+        if: always()
+        id: summary
+        env:
+          INPUT_SOURCE_CSV: ${{ inputs.source_csv }}
+          INPUT_OFFSET: ${{ inputs.offset }}
+          INPUT_MAX_RECORDS: ${{ inputs.max_records }}
+        run: |
+          source .venv/bin/activate
+          uv run python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          metadata_path = pathlib.Path(os.environ["SCRAPE_OUTPUT"]) / "metadata.json"
+          subset_path = pathlib.Path(os.environ["SUBSET_CSV"]).resolve()
+
+          if not metadata_path.exists():
+              print("No metadata found", file=sys.stderr)
+              sys.exit(0)
+
+          metadata = json.loads(metadata_path.read_text())
+          summary_lines = [
+              "## Property detail scrape",
+              f"- Source CSV: {os.environ['INPUT_SOURCE_CSV']}",
+              f"- Offset: {os.environ['INPUT_OFFSET']}",
+              f"- Max records: {os.environ['INPUT_MAX_RECORDS']}",
+              f"- Processed: {metadata.get('total_processed', 0)}",
+              f"- Successful: {metadata.get('total_successful', 0)}",
+              f"- Failed: {metadata.get('total_failed', 0)}",
+              f"- Output dir: {metadata_path.parent}",
+              f"- Subset CSV: {subset_path}",
+          ]
+          print("\n".join(summary_lines))
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("\n".join(summary_lines) + "\n")
+            PY
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: property-detail-output-${{ github.run_id }}
+          path: |
+            ${{ env.SCRAPE_OUTPUT }}/**
+            ${{ env.SUBSET_CSV }}
+            /tmp/xvfb.log
+          retention-days: 7

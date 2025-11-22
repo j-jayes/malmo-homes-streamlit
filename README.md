@@ -143,6 +143,49 @@ python src/scrapers/link_collector.py
 python src/scrapers/property_scraper.py
 ```
 
+## 🧭 Property Detail Runner (2025 refresh)
+
+The refreshed runner splits scraping into discrete stages so we can scale safely via GitHub Actions:
+
+1. **Stage property manifests** – copy immutable CSVs from `data/raw/area_ranges/` (or live feeds) into `data/staging/property_links/`, one manifest per batch, and record the SHA-256 digest + ingestion timestamp (see `.github/checklists/2025-11-22-property-detail-runner-checklist.md`).
+2. **Local dry-run** – validate selectors and schema with a tiny subset:
+
+```bash
+uv run python -m src.scrapers.batch_manager_cli \
+   --input data/staging/property_links/properties_0_31.csv \
+   --output-dir data/tmp/property_detail_dry_run \
+   --max-records 5 \
+   --batch-size 5
+```
+
+3. **Dispatch GitHub Actions via GitHub CLI** – once the workflow file lives on `main`, launch a canary run straight from your terminal (customize inputs as needed):
+
+```bash
+gh workflow run property_detail_runner.yml \
+   --ref main \
+   --field source_csv=data/staging/property_links/properties_0_31.csv \
+   --field max_records=10 \
+   --field offset=0 \
+   --field batch_size=5 \
+   --field headless=true \
+   --field log_level=INFO
+```
+
+> ℹ️ GitHub only exposes `workflow_dispatch` triggers that exist on the default branch. Merge the workflow first, then use `--ref` to target feature branches if you need to ship canary code.
+
+### Progress cache & deduplication
+
+- `src/scrapers/progress_tracker.py` persists SHA-256 fingerprints of each scraped property (prefers `property_id`, falls back to URL) in `<output-dir>/progress_cache.json`.
+- `batch_manager_cli` loads that cache automatically, skips already-processed rows during subset selection, and records successes from `BatchManager` so reruns remain idempotent.
+- Use `--progress-cache /custom/path.json` to override the storage location or `--no-skip-processed` if you intentionally need to re-scrape.
+- The cache is written alongside `metadata.json`, so clearing both files resets the run history for a given output directory.
+
+### Staging discipline
+
+- Only staging manifests feed the GitHub runner; raw captures stay untouched for reproducibility.
+- After a batch succeeds, move its manifest from `data/staging/property_links/` to `data/archive/staged/` (or annotate it) so the backlog clearly shows what still needs enrichment.
+- Downstream modelling jobs always read from `data/processed/property_details/`, never from staging.
+
 ### Running the Application
 
 ```bash

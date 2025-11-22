@@ -30,6 +30,14 @@ This project consists of **two distinct but connected components**:
 - **Validation:** Test prediction accuracy against outcomes
 - **Learning:** Retrain models with fresh data
 
+### 📸 Component 4: Computer Vision Feature Extraction (NEW!)
+**Purpose:** Extract rich visual features from property images to enhance price predictions
+- **Target:** All property images from Hemnet (typically 20-30 images per property)
+- **Features:** Hardwood floors, balcony type, kitchen quality, natural light, renovation status, etc.
+- **Technology:** Vision Language Models (VLMs) like GPT-4V, LLaVA, or Qwen-VL
+- **Use Case:** Add 50+ visual features to ML models for more accurate price predictions
+- **Storage:** Image URLs in database, features as structured JSON
+
 ---
 
 ## 🎉 What's Been Accomplished
@@ -288,6 +296,187 @@ match = (
 
 ---
 
+### 📸 Component 4: Computer Vision Features (Phase 4)
+
+#### Phase 4A: Image Collection Pipeline 📋 PLANNING
+- [ ] Extend property scraper to extract image URLs
+- [ ] Design image storage strategy (local cache + URLs)
+- [ ] Implement batch image downloader with rate limiting
+- [ ] Add image metadata (room type, order, dimensions)
+- [ ] Test on sample properties (50 properties)
+
+**Storage Strategy:**
+```python
+# Store in property schema
+image_urls: List[str]  # All image URLs from listing
+image_features: Optional[Dict]  # Extracted features (JSON)
+image_count: int  # Number of images available
+```
+
+**Estimated Data:**
+- 56k sold properties × 25 images avg = 1.4M images
+- ~500 active listings × 25 images = 12.5k images
+- Storage: URLs only (minimal), features as JSON (~5KB per property)
+
+#### Phase 4B: Vision Language Model Selection 📋 PLANNING
+- [ ] Research and compare VLM options (GPT-4V, LLaVA, Qwen-VL, Moondream)
+- [ ] Evaluate cost vs accuracy trade-offs
+- [ ] Test prompt engineering for property features
+- [ ] Benchmark on 100 sample images
+- [ ] Select final model based on performance and cost
+
+**VLM Options (as of Nov 2025):**
+
+1. **GPT-4V (OpenAI)** - Most capable, highest cost
+   - Pros: Best reasoning, excellent detail extraction
+   - Cons: $0.01 per image, API rate limits
+   - Best for: High-value properties, final validation
+
+2. **Claude 3.5 Sonnet (Anthropic)** - Strong alternative
+   - Pros: Excellent vision, good value, 200k context
+   - Cons: API only, moderate cost
+   - Best for: Batch processing with good quality
+
+3. **LLaVA 1.6 / LLaVA-NeXT** - Open source, self-hostable
+   - Pros: Free after setup, no rate limits, 34B parameter model
+   - Cons: Requires GPU (T4/A10), setup complexity
+   - Best for: Large-scale batch processing
+
+4. **Qwen-VL / Qwen2-VL** - Strong open source option
+   - Pros: State-of-the-art open model, multilingual
+   - Cons: Requires GPU infrastructure
+   - Best for: Cost-conscious production
+
+5. **Moondream2** - Ultra-light open source
+   - Pros: Only 2B params, runs on CPU, very fast
+   - Cons: Lower accuracy than larger models
+   - Best for: Rapid prototyping, quick screening
+
+**Recommended Approach:**
+- Start with Moondream2 for prototyping (fast, free)
+- Use LLaVA 1.6 for production (good balance)
+- GPT-4V for validation on 10% random sample
+
+#### Phase 4C: Feature Engineering 📋 PLANNING
+- [ ] Design comprehensive feature taxonomy
+- [ ] Create prompt templates for each feature category
+- [ ] Implement multi-image analysis (room-by-room)
+- [ ] Build confidence scoring system
+- [ ] Validate feature extraction accuracy
+
+**Feature Categories:**
+
+```python
+COMPUTER_VISION_FEATURES = {
+    "flooring": [
+        "hardwood_floor",
+        "herringbone_parquet",
+        "laminate_floor",
+        "tile_floor",
+        "carpet",
+    ],
+    "kitchen": [
+        "modern_kitchen",
+        "marble_countertops",
+        "integrated_appliances",
+        "kitchen_island",
+        "open_kitchen_layout",
+    ],
+    "bathroom": [
+        "modern_bathroom",
+        "marble_bathroom",
+        "walk_in_shower",
+        "bathtub",
+        "double_sinks",
+    ],
+    "style": [
+        "scandinavian_style",
+        "modern_style",
+        "classic_style",
+        "industrial_style",
+        "minimalist",
+    ],
+    "condition": [
+        "newly_renovated",
+        "well_maintained",
+        "needs_renovation",
+        "original_condition",
+    ],
+    "lighting": [
+        "high_natural_light",
+        "bright_rooms",
+        "south_facing",
+        "large_windows",
+    ],
+    "balcony": [
+        "enclosed_balcony",
+        "french_balcony",
+        "spacious_balcony",
+        "terrace",
+    ],
+    "special": [
+        "fireplace",
+        "exposed_brick",
+        "high_ceilings",
+        "moldings",
+        "view",
+    ],
+}
+```
+
+**Sample Prompt Template:**
+```
+You are an expert Swedish real estate appraiser. Analyze this property image and identify visual features that affect property value.
+
+For each category, provide:
+1. Presence (yes/no/unsure)
+2. Confidence (0-100%)
+3. Brief description
+
+Categories:
+- Flooring type and quality
+- Kitchen style and condition
+- Natural light level
+- Renovation status
+- Special features (fireplace, moldings, etc.)
+
+Image: [property photo]
+
+Respond in JSON format.
+```
+
+#### Phase 4D: Integration with Price Model 📋 PLANNING
+- [ ] Add visual features to training dataset
+- [ ] Re-train price prediction models
+- [ ] Compare accuracy: with vs without vision features
+- [ ] Implement feature importance analysis
+- [ ] A/B test predictions on new listings
+
+**Expected Impact:**
+- Baseline model R² ≈ 0.80 (traditional features only)
+- Target with vision R² ≈ 0.85-0.87 (+5-7% improvement)
+- Better predictions for:
+  - Renovated properties
+  - High-end apartments
+  - Properties with unique features
+
+**Feature Integration:**
+```python
+# Traditional features
+rooms, living_area, neighborhood, building_year, floor
+
+# New visual features (binary flags)
+has_hardwood_floor, has_modern_kitchen, high_natural_light
+has_fireplace, newly_renovated, has_marble_bathroom
+
+# Aggregated scores
+overall_condition_score (0-100)
+renovation_quality_score (0-100)
+natural_light_score (0-100)
+```
+
+---
+
 ## 📅 Implementation Timeline
 
 ### Week 1 (Current)
@@ -310,6 +499,13 @@ match = (
 - ⏳ Transition tracking implementation
 - ⏳ Analytics dashboard
 - ⏳ Streamlit MVP
+
+### Month 3 (Phase 4: Computer Vision)
+- ⏳ Implement image collection pipeline
+- ⏳ Select and configure VLM
+- ⏳ Extract features from historical properties
+- ⏳ Integrate features into ML model
+- ⏳ Validate improved predictions
 
 ### Phase 3: DuckDB Integration
 - [ ] Design database schema
