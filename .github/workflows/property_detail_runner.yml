@@ -149,9 +149,9 @@ jobs:
               f"- Subset CSV: {subset_path}",
           ]
           print("\n".join(summary_lines))
-            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
               fh.write("\n".join(summary_lines) + "\n")
-            PY
+          PY
 
       - name: Upload artifacts
         if: always()

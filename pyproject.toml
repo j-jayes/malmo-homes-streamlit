@@ -12,6 +12,7 @@ license = {text = "MIT"}
 dependencies = [
     "playwright>=1.47.0",
     "pandas>=2.2.0",
+    "pyarrow>=17.0.0",
     "pyyaml>=6.0.1",
     "python-dotenv>=1.0.0",
 ]
@@ -26,7 +27,6 @@ scraping = [
 data = [
     "duckdb>=1.1.0",
     "polars>=1.10.0",
-    "pyarrow>=17.0.0",
 ]
 
 # API and web app

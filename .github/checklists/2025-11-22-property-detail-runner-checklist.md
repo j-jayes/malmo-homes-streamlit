@@ -136,3 +136,5 @@ _This document will be updated as we execute each checklist item and capture run
 ## 📝 Run Log
 
 - 2025-11-22 — `gh workflow run property_detail_runner.yml --ref feature/property-detail-runner ...` failed with `HTTP 404` because GitHub only registers `workflow_dispatch` definitions that live on the default branch. Reference: [Manually running a workflow](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow). Next step: raise a PR and land the workflow on `main`, then re-trigger the canary run.
+- 2025-11-22 — First run on `main` failed mid-job due to missing `pyarrow`; resolved by promoting `pyarrow` to core dependencies and re-installing via `uv pip install -e .[scraping]`.
+- 2025-11-22 — Second run reached summary step but crashed with `IndentationError` when writing to `$GITHUB_STEP_SUMMARY`; fixed indentation in `.github/workflows/property_detail_runner.yml` and ready to re-dispatch.
