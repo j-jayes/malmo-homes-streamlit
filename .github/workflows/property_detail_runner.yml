@@ -66,7 +66,8 @@ jobs:
       INPUT_LOG_LEVEL: ${{ inputs.log_level || 'INFO' }}
       HEMNET_DETAIL_MIN_DELAY_SECONDS: 4
       HEMNET_DETAIL_MAX_DELAY_SECONDS: 8
-      PROPERTY_DETAIL_COMMIT_INTERVAL: 4
+      PROPERTY_DETAIL_COMMIT_INTERVAL: 0 # Disable intermediate commits
+      PROGRESS_CACHE: data/processed/property_details/progress_cache.json
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -154,6 +155,7 @@ jobs:
             --subset-output "$SUBSET_CSV" \
             --log-level "$INPUT_LOG_LEVEL" \
             --git-commit-interval "$PROPERTY_DETAIL_COMMIT_INTERVAL" \
+            --progress-cache "$PROGRESS_CACHE" \
             $EXTRA_FLAGS
 
       - name: Summarize results
@@ -239,59 +241,23 @@ jobs:
               fh.write(json.dumps(record) + "\n")
           PY
 
-      - name: Commit scraped batches before DuckDB update
-        if: ${{ success() }}
-        env:
-          RUN_TIMESTAMP: ${{ steps.run_timestamp.outputs.utc }}
-        run: |
-          set -euo pipefail
-          if [ -z "${RUN_DIR:-}" ]; then
-            echo "RUN_DIR not exported; skipping early commit."
-            exit 0
-          fi
-          git add "$RUN_DIR"
-          if [ -f "$RUN_INDEX" ]; then
-            git add "$RUN_INDEX"
-          fi
-          if git diff --cached --quiet; then
-            echo "No new batch files to commit."
-            exit 0
-          fi
-          git commit -m "data: property detail batches ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET} max=${INPUT_MAX_RECORDS})"
-          git push
-
       - name: Update DuckDB database
         if: ${{ success() }}
         run: |
           source .venv/bin/activate
           python src/data/aggregate_properties.py
 
-      - name: Commit DuckDB aggregates (optional)
+      - name: Commit and push changes
         if: ${{ success() }}
-        env:
-          RUN_TIMESTAMP: ${{ steps.run_timestamp.outputs.utc }}
-        run: |
-          set -euo pipefail
-          staged_any=false
-          status_output="$(git status --short "$PROCESSED_ROOT" 2>/dev/null || true)"
-          if [ -n "$status_output" ]; then
-            git add "$PROCESSED_ROOT"
-            staged_any=true
-          fi
-          if ! git check-ignore -q data/database/properties.duckdb 2>/dev/null; then
-            if [ -f data/database/properties.duckdb ]; then
-              git add data/database/properties.duckdb
-              staged_any=true
-            fi
-          else
-            echo "properties.duckdb is gitignored; skipping stage."
-          fi
-          if ! $staged_any || git diff --cached --quiet; then
-            echo "No aggregate changes to commit."
-            exit 0
-          fi
-          git commit -m "ci: ingest property details ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET} max=${INPUT_MAX_RECORDS})"
-          git push
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "data: property details ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET})"
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          file_pattern: 'data/processed/property_details/* data/database/*.duckdb data/gha_property_batches/*.parquet'
+          commit_options: '--no-verify'
+          skip_fetch: false
+          skip_checkout: false
 
       - name: Upload artifacts
         if: always()

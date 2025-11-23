@@ -74,6 +74,9 @@ jobs:
           # Aggregate from the new output directory
           python src/data/aggregate_properties.py --input data/processed/property_details/gha_runs/weekly_$(date +%Y%m%d)
       
+      - name: Pull latest changes
+        run: git pull --rebase --autostash
+      
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
