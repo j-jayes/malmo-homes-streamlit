@@ -8,6 +8,8 @@ import json
 import re
 import time
 import logging
+import os
+import random
 from datetime import datetime, date
 from playwright.sync_api import sync_playwright, Page
 from typing import Dict, Optional, Tuple, List
@@ -21,6 +23,25 @@ from src.models.property_schema import BaseProperty, SoldProperty, ForSaleProper
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def _respectful_sleep(default_min: float = 5.0, default_max: float | None = None) -> None:
+    min_seconds = default_min
+    max_seconds = default_max if default_max is not None else default_min
+    min_override = os.getenv("HEMNET_DETAIL_MIN_DELAY_SECONDS")
+    max_override = os.getenv("HEMNET_DETAIL_MAX_DELAY_SECONDS")
+    try:
+        if min_override is not None:
+            min_seconds = max(float(min_override), 0.0)
+        if max_override is not None:
+            max_seconds = max(float(max_override), 0.0)
+    except ValueError:
+        logger.warning("Invalid detail delay env vars, falling back to defaults")
+    if max_seconds < min_seconds:
+        max_seconds = min_seconds
+    delay = random.uniform(min_seconds, max_seconds)
+    logger.debug("Sleeping %.2fs between property requests", delay)
+    time.sleep(delay)
 
 
 class PropertyScraper:
@@ -58,7 +79,7 @@ class PropertyScraper:
                 if not self.headless:
                     logger.info("Waiting for manual challenge resolution...")
                     page.wait_for_load_state("networkidle", timeout=30000)
-                    time.sleep(5)
+                    _respectful_sleep()
                     logger.info("✓ Cloudflare challenge passed")
                 else:
                     raise Exception("Cloudflare challenge in headless mode - cannot continue")
@@ -533,7 +554,7 @@ def main():
             else:
                 print("\n❌ FAILED to scrape property")
             
-            time.sleep(5)  # Respectful delay
+            _respectful_sleep()
     
     elif args.url:
         result = scraper.scrape_property(args.url)

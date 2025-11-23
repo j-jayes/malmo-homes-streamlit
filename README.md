@@ -321,6 +321,12 @@ uvicorn app.main:app --reload
 - Deploy to GitHub Pages
 ```
 
+#### Historical backfill cadence (2025 refresh)
+- `scrape_sold_batch.yml` now runs automatically at **00:00 / 06:00 / 12:00 / 18:00 UTC**, staying within the 6-hour GitHub-hosted runner window and resuming from `data/raw/area_ranges/progress.json` if a job times out.
+- `property_detail_runner.yml` follows **30 minutes later** (00:30 / 06:30 / 12:30 / 18:30 UTC) to enrich the CSV manifests produced by the link scraper; it skips any URL fingerprints already present in `data/processed/property_details/gha_runs/*/progress_cache.jsonl`.
+- Both workflows use concurrency groups so a delayed run queues instead of overlapping, and they respect polite scraping delays via `HEMNET_SOLD_MIN/MAX_DELAY_SECONDS` and `HEMNET_DETAIL_MIN/MAX_DELAY_SECONDS` (default 4–8 s between requests).
+- Each run commits incremental CSV/Parquet outputs plus DuckDB updates, so reruns keep stateful progress and avoid scraping the same range twice.
+
 ## 🗺️ Coverage
 
 ### Current Regions

@@ -23,15 +23,25 @@ on:
         required: false
         type: number
         default: 50
+  schedule:
+    # Runs every 6 hours; the detail runner cron starts 30 minutes later
+    - cron: '0 0,6,12,18 * * *'
 
 permissions:
   contents: write
   issues: write
 
+concurrency:
+  group: scrape-sold-batch
+  cancel-in-progress: false
+
 jobs:
   scrape-all-areas:
     runs-on: ubuntu-latest
     timeout-minutes: 350  # 5h 50m (under 6h limit)
+    env:
+      HEMNET_SOLD_MIN_DELAY_SECONDS: 4
+      HEMNET_SOLD_MAX_DELAY_SECONDS: 8
     
     steps:
       - name: Checkout repository

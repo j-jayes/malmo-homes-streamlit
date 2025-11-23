@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import random
 import time
 from datetime import datetime, timedelta
@@ -57,6 +58,17 @@ class SoldPropertiesScraper:
     
     def _human_like_delay(self, min_seconds: float = 3, max_seconds: float = 8):
         """Add random human-like delay"""
+        min_override = os.getenv("HEMNET_SOLD_MIN_DELAY_SECONDS")
+        max_override = os.getenv("HEMNET_SOLD_MAX_DELAY_SECONDS")
+        try:
+            if min_override is not None:
+                min_seconds = max(float(min_override), 0.0)
+            if max_override is not None:
+                max_seconds = max(float(max_override), 0.0)
+        except ValueError:
+            logger.warning("Invalid sold delay env vars, falling back to defaults")
+        if max_seconds < min_seconds:
+            max_seconds = min_seconds
         delay = random.uniform(min_seconds, max_seconds)
         logger.debug(f"Waiting {delay:.2f} seconds...")
         time.sleep(delay)

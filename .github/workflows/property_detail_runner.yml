@@ -11,7 +11,7 @@ on:
       max_records:
         description: "Maximum records to scrape after offset"
         required: false
-        default: 5
+        default: 100
         type: number
       offset:
         description: "Number of rows to skip before scraping"
@@ -37,6 +37,9 @@ on:
           - DEBUG
           - INFO
           - WARNING
+  schedule:
+    # Offset by 30 minutes from link scraping cadence
+    - cron: '30 0,6,12,18 * * *'
 
 permissions:
   contents: write
@@ -55,10 +58,14 @@ jobs:
       SUBSET_CSV: data/tmp/gha_property_subset.csv
       PROCESSED_ROOT: data/processed/property_details/gha_runs
       RUN_INDEX: data/processed/property_details/gha_runs/index.jsonl
-      INPUT_SOURCE_CSV: ${{ inputs.source_csv }}
-      INPUT_OFFSET: ${{ inputs.offset }}
-      INPUT_MAX_RECORDS: ${{ inputs.max_records }}
-      INPUT_BATCH_SIZE: ${{ inputs.batch_size }}
+      INPUT_SOURCE_CSV: ${{ inputs.source_csv || 'data/raw/area_ranges/properties_0_31.csv' }}
+      INPUT_OFFSET: ${{ inputs.offset || 0 }}
+      INPUT_MAX_RECORDS: ${{ inputs.max_records || 100 }}
+      INPUT_BATCH_SIZE: ${{ inputs.batch_size || 5 }}
+      INPUT_HEADLESS: ${{ inputs.headless || true }}
+      INPUT_LOG_LEVEL: ${{ inputs.log_level || 'INFO' }}
+      HEMNET_DETAIL_MIN_DELAY_SECONDS: 4
+      HEMNET_DETAIL_MAX_DELAY_SECONDS: 8
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -110,19 +117,19 @@ jobs:
           DISPLAY: ${{ env.DISPLAY }}
         run: |
           source .venv/bin/activate
-          HEADLESS_FLAG="${{ inputs.headless }}"
+          HEADLESS_FLAG="$INPUT_HEADLESS"
           EXTRA_FLAGS=""
           if [ "$HEADLESS_FLAG" = 'false' ]; then
             EXTRA_FLAGS="--show-browser"
           fi
           uv run python -m src.scrapers.batch_manager_cli \
-            --input "${{ inputs.source_csv }}" \
+            --input "$INPUT_SOURCE_CSV" \
             --output-dir "$SCRAPE_OUTPUT" \
-            --batch-size "${{ inputs.batch_size }}" \
-            --offset "${{ inputs.offset }}" \
-            --max-records "${{ inputs.max_records }}" \
+            --batch-size "$INPUT_BATCH_SIZE" \
+            --offset "$INPUT_OFFSET" \
+            --max-records "$INPUT_MAX_RECORDS" \
             --subset-output "$SUBSET_CSV" \
-            --log-level "${{ inputs.log_level }}" \
+            --log-level "$INPUT_LOG_LEVEL" \
             $EXTRA_FLAGS
 
       - name: Summarize results
