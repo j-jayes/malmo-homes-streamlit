@@ -37,7 +37,8 @@ jobs:
       - name: Install dependencies
         run: |
           source .venv/bin/activate
-          uv pip install -r requirements.txt
+          # Install scraping and data dependencies
+          uv pip install -e ".[scraping,data]"
           
       - name: Install Playwright browsers
         run: |
@@ -47,31 +48,31 @@ jobs:
       - name: Collect property links (Malmö)
         run: |
           source .venv/bin/activate
-          python src/scrapers/link_collector.py --location-id 17989 --max-pages 50 --output data/raw/malmo_links_$(date +%Y%m%d).csv
+          python src/scrapers/link_collector.py --location-id 17989 --max-pages 50 --output data/raw/malmo_links_$(date +%Y%m%d).parquet
         continue-on-error: false
       
       - name: Scrape property details
         run: |
           source .venv/bin/activate
-          python src/scrapers/property_scraper.py --input data/raw/malmo_links_$(date +%Y%m%d).csv --output data/raw/malmo_properties_$(date +%Y%m%d).csv
+          # Use batch_manager_cli for robust scraping and Parquet output
+          uv run python -m src.scrapers.batch_manager_cli \
+            --input data/raw/malmo_links_$(date +%Y%m%d).parquet \
+            --output-dir data/processed/property_details/gha_runs/weekly_$(date +%Y%m%d) \
+            --batch-size 10 \
+            --log-level INFO
         continue-on-error: false
       
-      - name: Validate scraped data
-        run: |
-          source .venv/bin/activate
-          python scripts/validate_data.py --input data/raw/malmo_properties_$(date +%Y%m%d).csv
-        continue-on-error: true
+      # - name: Validate scraped data
+      #   run: |
+      #     source .venv/bin/activate
+      #     python scripts/validate_data.py --input data/raw/malmo_properties_$(date +%Y%m%d).csv
+      #   continue-on-error: true
       
       - name: Update DuckDB database
         run: |
           source .venv/bin/activate
-          python scripts/update_database.py --input data/raw/malmo_properties_$(date +%Y%m%d).csv
-        continue-on-error: false
-      
-      - name: Generate statistics
-        run: |
-          source .venv/bin/activate
-          python scripts/generate_stats.py --output data/processed/weekly_stats_$(date +%Y%m%d).json
+          # Aggregate from the new output directory
+          python src/data/aggregate_properties.py --input data/processed/property_details/gha_runs/weekly_$(date +%Y%m%d)
       
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5

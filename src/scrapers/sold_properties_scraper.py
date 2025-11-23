@@ -438,6 +438,39 @@ class SoldPropertiesScraper:
         
         logger.info(f"Saved {len(properties)} properties to {output_path}")
 
+    def save_to_parquet(self, properties: List[Dict], output_path: Path):
+        """Save properties to Parquet file"""
+        try:
+            import pandas as pd
+        except ImportError:
+            logger.error("pandas is required for Parquet output")
+            raise
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        if not properties:
+            logger.warning("No properties to save")
+            return
+
+        df = pd.DataFrame(properties)
+        
+        # Check if file exists and has same data
+        if output_path.exists():
+            try:
+                existing_df = pd.read_parquet(output_path)
+                if 'property_id' in existing_df.columns:
+                    existing_ids = set(existing_df['property_id'].astype(str))
+                    new_ids = set(df['property_id'].astype(str))
+                    
+                    if existing_ids == new_ids:
+                        logger.info(f"File {output_path} already exists with same data, skipping")
+                        return
+            except Exception as e:
+                logger.warning(f"Could not read existing parquet file: {e}")
+
+        df.to_parquet(output_path, index=False)
+        logger.info(f"Saved {len(properties)} properties to {output_path}")
+
 
 def parse_month(month_str: str) -> tuple[int, int]:
     """Parse month string (YYYY-MM) into year and month"""
@@ -509,7 +542,7 @@ def main():
         if args.output:
             output_path = Path(args.output)
         else:
-            output_path = Path(f"data/raw/sold_properties_area_{area_min}_{area_max}.csv")
+            output_path = Path(f"data/raw/sold_properties_area_{area_min}_{area_max}.parquet")
         
         logger.info(f"Configuration:")
         logger.info(f"  Area range: {area_min}-{area_max}m²")
@@ -526,7 +559,10 @@ def main():
                 max_pages=max_pages
             )
             
-            scraper.save_to_csv(properties, output_path)
+            if output_path.suffix == '.csv':
+                scraper.save_to_csv(properties, output_path)
+            else:
+                scraper.save_to_parquet(properties, output_path)
             
             logger.info("✅ Scraping completed successfully!")
             logger.info(f"📊 Collected {len(properties)} properties")
@@ -549,7 +585,7 @@ def main():
         if args.output:
             output_path = Path(args.output)
         else:
-            output_path = Path(f"data/raw/sold_links/sold_links_{year}{month:02d}.csv")
+            output_path = Path(f"data/raw/sold_links/sold_links_{year}{month:02d}.parquet")
         
         logger.info(f"Configuration:")
         logger.info(f"  Month: {year}-{month:02d}")
@@ -566,7 +602,10 @@ def main():
                 max_pages=max_pages
             )
             
-            scraper.save_to_csv(properties, output_path)
+            if output_path.suffix == '.csv':
+                scraper.save_to_csv(properties, output_path)
+            else:
+                scraper.save_to_parquet(properties, output_path)
             
             logger.info("✅ Scraping completed successfully!")
             logger.info(f"📊 Collected {len(properties)} properties")

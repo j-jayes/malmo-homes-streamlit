@@ -214,11 +214,17 @@ def scrape_multiple_pages(base_url: str, max_pages: int = 3, delay: int = 5, hea
     return all_results
 
 
-def save_links_to_csv(results: List[Dict], filename: str = None):
-    """Save collected links to CSV file."""
+def save_links_to_parquet(results: List[Dict], filename: str = None):
+    """Save collected links to Parquet file."""
+    try:
+        import pandas as pd
+    except ImportError:
+        logging.error("pandas is required for Parquet output")
+        raise
+
     if filename is None:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'hemnet_links_{timestamp}.csv'
+        filename = f'hemnet_links_{timestamp}.parquet'
     
     # Flatten all links from all pages
     all_links = []
@@ -226,6 +232,10 @@ def save_links_to_csv(results: List[Dict], filename: str = None):
         for link in result.get('links', []):
             all_links.append(link)
     
+    if not all_links:
+        logging.warning("No links to save")
+        return filename
+
     # Deduplicate by URL
     seen = set()
     unique_links = []
@@ -234,76 +244,49 @@ def save_links_to_csv(results: List[Dict], filename: str = None):
             seen.add(link['url'])
             unique_links.append(link)
     
-    # Save to CSV
-    with open(filename, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=['url', 'property_id', 'found_at'])
-        writer.writeheader()
-        writer.writerows(unique_links)
+    df = pd.DataFrame(unique_links)
+    df.to_parquet(filename, index=False)
     
     logging.info(f"\n✓ Saved {len(unique_links)} unique links to {filename}")
     return filename
 
-
 def main():
-    """Test the link collector"""
+    """CLI for link collector"""
+    import argparse
     
-    # Start with the provided URL
-    base_url = "https://www.hemnet.se/bostader?item_types=bostadsratt&expand_locations=10000&location_ids=17989"
+    parser = argparse.ArgumentParser(description='Hemnet Link Collector')
+    parser.add_argument('--location-id', type=str, default='17989', help='Hemnet location ID')
+    parser.add_argument('--max-pages', type=int, default=3, help='Maximum pages to scrape')
+    parser.add_argument('--output', type=str, help='Output file path (parquet or csv)')
+    parser.add_argument('--headless', action='store_true', help='Run in headless mode')
+    parser.add_argument('--delay', type=int, default=5, help='Delay between pages in seconds')
+    
+    args = parser.parse_args()
+    
+    base_url = f"https://www.hemnet.se/bostader?item_types=bostadsratt&expand_locations=10000&location_ids={args.location_id}"
     
     print("=" * 80)
-    print("Hemnet Link Collector - Phase 1")
+    print("Hemnet Link Collector")
     print("=" * 80)
-    print("\nThis script will:")
-    print("1. Load the Hemnet search page")
-    print("2. Extract all property listing links")
-    print("3. Get pagination information")
-    print("4. Optionally scrape multiple pages")
-    print("\nNOTE: Running in visible browser mode to handle Cloudflare")
+    print(f"Location ID: {args.location_id}")
+    print(f"Max pages: {args.max_pages}")
+    print(f"Output: {args.output}")
     print("=" * 80)
     
-    # Test 1: Single page
-    print("\n[TEST 1] Scraping single page...")
-    input("Press Enter to continue...")
+    results = scrape_multiple_pages(base_url, max_pages=args.max_pages, delay=args.delay, headless=args.headless)
     
-    result = scrape_search_page(base_url, headless=False)
+    # Determine output format
+    output_file = args.output
+    if not output_file:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_file = f'data/raw/hemnet_links_{timestamp}.parquet'
     
-    print(f"\nResults:")
-    print(f"  Links found: {len(result['links'])}")
-    print(f"  Current page: {result['pagination'].get('current_page')}")
-    print(f"  Total pages: {result['pagination'].get('total_pages')}")
-    print(f"  Total results: {result['pagination'].get('total_results')}")
-    
-    if result['links']:
-        print(f"\nFirst 3 links:")
-        for link in result['links'][:3]:
-            print(f"  - {link['url']}")
-    
-    # Test 2: Multiple pages (optional)
-    print("\n" + "=" * 80)
-    response = input("\nDo you want to scrape multiple pages? (y/n): ")
-    
-    if response.lower() == 'y':
-        num_pages = int(input("How many pages to scrape? (1-50): "))
-        delay = int(input("Delay between requests in seconds? (3-10): "))
-        
-        print(f"\n[TEST 2] Scraping {num_pages} pages with {delay}s delay...")
-        
-        results = scrape_multiple_pages(base_url, max_pages=num_pages, delay=delay, headless=False)
-        
-        # Save to CSV
-        filename = save_links_to_csv(results)
-        
-        # Summary
-        total_links = sum(len(r.get('links', [])) for r in results)
-        print(f"\n{'='*80}")
-        print("SUMMARY")
-        print(f"{'='*80}")
-        print(f"Pages scraped: {len(results)}")
-        print(f"Total links found: {total_links}")
-        print(f"Saved to: {filename}")
+    if str(output_file).endswith('.csv'):
+        save_links_to_csv(results, output_file)
+    else:
+        save_links_to_parquet(results, output_file)
     
     print("\n✓ Done!")
-
 
 if __name__ == "__main__":
     main()

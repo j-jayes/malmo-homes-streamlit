@@ -45,7 +45,7 @@ jobs:
         run: |
           uv venv
           source .venv/bin/activate
-          uv pip install -e ".[scraping]"
+          uv pip install -e ".[scraping,data]"
       
       - name: Install Playwright and browsers
         run: |
@@ -95,20 +95,23 @@ jobs:
       - name: Check output file
         run: |
           MONTH=${{ steps.month.outputs.month }}
-          FILE="data/raw/sold_properties_${MONTH//-/}.csv"
+          FILE="data/raw/sold_properties_${MONTH//-/}.parquet"
           
           if [ -f "$FILE" ]; then
             echo "✅ Output file created: $FILE"
-            LINES=$(wc -l < "$FILE")
-            echo "📊 Lines in file: $LINES"
-            
-            # Show first few lines
-            echo "Preview:"
-            head -n 5 "$FILE"
+            # Parquet is binary, so we can't just cat it, but we can check size
+            ls -lh "$FILE"
           else
             echo "❌ Output file not found: $FILE"
             exit 1
           fi
+
+      - name: Update DuckDB database
+        run: |
+          source .venv/bin/activate
+          # Aggregate the new parquet file (by scanning data/raw)
+          # Note: This might pick up other raw parquet files, which is probably what we want (consolidation)
+          python src/data/aggregate_properties.py --input data/raw
       
       - name: Commit and push data
         uses: stefanzweifel/git-auto-commit-action@v5

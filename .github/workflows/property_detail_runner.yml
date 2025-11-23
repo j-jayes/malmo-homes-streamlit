@@ -79,7 +79,7 @@ jobs:
         run: |
           uv venv
           source .venv/bin/activate
-          uv pip install -e ".[scraping]"
+          uv pip install -e ".[scraping,data]"
 
       - name: Install Playwright browsers
         run: |
@@ -215,6 +215,12 @@ jobs:
               fh.write(json.dumps(record) + "\n")
           PY
 
+      - name: Update DuckDB database
+        if: ${{ success() }}
+        run: |
+          source .venv/bin/activate
+          python src/data/aggregate_properties.py
+
       - name: Commit processed data
         if: ${{ success() }}
         env:
@@ -224,6 +230,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$PROCESSED_ROOT"
+          git add data/database/properties.duckdb
           if git diff --cached --quiet; then
             echo "No processed data changes to commit."
             exit 0

@@ -80,16 +80,28 @@ class BatchManager:
     
     def _read_urls(self) -> List[Dict[str, str]]:
         """
-        Read URLs from CSV file.
+        Read URLs from CSV or Parquet file.
         
         Returns:
             List of dicts with at least 'url' key
         """
         urls = []
         skipped = 0
-        with open(self.input_file, newline='', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
+        
+        try:
+            if self.input_file.suffix == '.parquet':
+                import pandas as pd
+                df = pd.read_parquet(self.input_file)
+                # Convert to list of dicts
+                raw_urls = df.to_dict('records')
+            else:
+                # Assume CSV
+                raw_urls = []
+                with open(self.input_file, newline='', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    raw_urls = list(reader)
+            
+            for row in raw_urls:
                 if 'url' in row:
                     if self.progress_tracker and self.progress_tracker.should_skip(row):
                         skipped += 1
@@ -97,6 +109,10 @@ class BatchManager:
                     urls.append(row)
                 else:
                     logger.warning(f"Row missing 'url' column: {row}")
+                    
+        except Exception as e:
+            logger.error(f"Error reading input file {self.input_file}: {e}")
+            raise
         
         logger.info(f"Loaded {len(urls)} URLs from {self.input_file}")
         if skipped:

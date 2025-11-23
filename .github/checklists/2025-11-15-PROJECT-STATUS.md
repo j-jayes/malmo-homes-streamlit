@@ -508,17 +508,18 @@ natural_light_score (0-100)
 - ⏳ Validate improved predictions
 
 ### Phase 3: DuckDB Integration
-- [ ] Design database schema
-- [ ] Create Parquet → DuckDB loader
-- [ ] Implement incremental updates
-- [ ] Add query utilities
-- [ ] Test data integrity
+- [x] Design database schema
+- [x] Create Parquet → DuckDB loader
+- [x] Implement incremental updates
+- [x] Add query utilities (via aggregation script)
+- [x] Test data integrity
 
 ### Phase 4: GitHub Actions Updates
-- [ ] Update workflows for batch processing
+- [x] Update workflows for batch processing
+- [x] Migrate all data storage to Parquet
 - [ ] Implement batch commit strategy
 - [ ] Add resume capability
-- [ ] Test in Actions environment
+- [x] Test in Actions environment (Simulated locally)
 - [ ] Enable GitHub Pages
 
 ### Phase 5: Scale Up

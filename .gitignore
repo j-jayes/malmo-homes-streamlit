@@ -231,3 +231,10 @@ _site/
 debug*.html
 hemnet_*.json
 hemnet_*.html
+
+# Frontend build artifacts
+app/frontend/dist/
+app/frontend/.vite/
+app/frontend/.cache/
+app/frontend/node_modules/
+app/frontend/.npm/

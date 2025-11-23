@@ -27,25 +27,25 @@ def _configure_logging(level: str) -> None:
     )
 
 
-def slice_csv_subset(
-    input_csv: Path,
+def slice_input_subset(
+    input_path: Path,
     subset_path: Path,
     offset: int = 0,
     max_records: int = 0,
     tracker: ProgressTracker | None = None,
 ) -> Tuple[int, int, int]:
-    """Copy a window of rows from ``input_csv`` into ``subset_path``.
+    """Copy a window of rows from ``input_path`` into ``subset_path``.
 
     Args:
-        input_csv: Source CSV with at least a ``url`` column.
-        subset_path: Destination file to write the sliced rows.
+        input_path: Source file (CSV or Parquet) with at least a ``url`` column.
+        subset_path: Destination file to write the sliced rows (CSV or Parquet).
         offset: Number of initial rows to skip.
         max_records: Maximum rows to copy after the offset; ``0`` means no limit.
 
     Returns:
         Tuple of (total_rows_in_source, rows_written_to_subset, rows_skipped_via_tracker).
     """
-    input_csv = input_csv.expanduser().resolve()
+    input_path = input_path.expanduser().resolve()
     subset_path = subset_path.expanduser().resolve()
     subset_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -55,27 +55,49 @@ def slice_csv_subset(
     cache_skipped = 0
     limit = max_records if max_records and max_records > 0 else None
 
-    with input_csv.open("r", encoding="utf-8", newline="") as src, subset_path.open(
-        "w", encoding="utf-8", newline=""
-    ) as dst:
-        reader = csv.DictReader(src)
-        fieldnames = reader.fieldnames or []
-        writer = csv.DictWriter(dst, fieldnames=fieldnames)
-        writer.writeheader()
+    # Read input
+    rows = []
+    try:
+        if input_path.suffix == '.parquet':
+            import pandas as pd
+            df = pd.read_parquet(input_path)
+            rows = df.to_dict('records')
+        else:
+            with input_path.open("r", encoding="utf-8", newline="") as src:
+                reader = csv.DictReader(src)
+                rows = list(reader)
+    except Exception as e:
+        logger.error(f"Error reading input {input_path}: {e}")
+        return 0, 0, 0
 
-        for row in reader:
-            total += 1
-            if skipped < offset:
-                skipped += 1
-                continue
-            if tracker and tracker.should_skip(row):
-                cache_skipped += 1
-                continue
-            if limit is not None and written >= limit:
-                break
+    total = len(rows)
+    output_rows = []
 
-            writer.writerow(row)
-            written += 1
+    for i, row in enumerate(rows):
+        if skipped < offset:
+            skipped += 1
+            continue
+        if tracker and tracker.should_skip(row):
+            cache_skipped += 1
+            continue
+        if limit is not None and written >= limit:
+            break
+
+        output_rows.append(row)
+        written += 1
+
+    # Write output
+    if output_rows:
+        if subset_path.suffix == '.parquet':
+            import pandas as pd
+            df = pd.DataFrame(output_rows)
+            df.to_parquet(subset_path, index=False)
+        else:
+            fieldnames = list(output_rows[0].keys())
+            with subset_path.open("w", encoding="utf-8", newline="") as dst:
+                writer = csv.DictWriter(dst, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(output_rows)
 
     logger.info(
         "Sliced %s rows out of %s (offset=%s, max_records=%s) into %s",
@@ -159,17 +181,20 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging(args.log_level)
 
     # Resolve paths
-    input_csv = args.input.expanduser().resolve()
-    if not input_csv.exists():
-        parser.error(f"Input CSV not found: {input_csv}")
+    input_path = args.input.expanduser().resolve()
+    if not input_path.exists():
+        parser.error(f"Input file not found: {input_path}")
 
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Default subset path extension matches input if not specified
+    default_subset_name = "subset.parquet" if input_path.suffix == '.parquet' else "subset.csv"
+    
     subset_path = (
         args.subset_output.expanduser().resolve()
         if args.subset_output
-        else output_dir / "subset.csv"
+        else output_dir / default_subset_name
     )
 
     tracker: ProgressTracker | None = None
@@ -182,8 +207,8 @@ def main(argv: list[str] | None = None) -> int:
         tracker = ProgressTracker(cache_path)
         logger.info("Loaded %s processed identifiers from %s", tracker.count, cache_path)
 
-    total_rows, subset_rows, cache_skipped = slice_csv_subset(
-        input_csv=input_csv,
+    total_rows, subset_rows, cache_skipped = slice_input_subset(
+        input_path=input_path,
         subset_path=subset_path,
         offset=max(args.offset, 0),
         max_records=max(args.max_records, 0),
