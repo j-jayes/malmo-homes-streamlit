@@ -7,9 +7,11 @@ and tracking progress with resume capability.
 import csv
 import json
 import logging
-from pathlib import Path
-from typing import List, Dict, Optional
+import os
+import subprocess
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -30,6 +32,7 @@ class BatchManager:
         batch_size: int = 100,
         headless: bool = True,
         progress_tracker: ProgressTracker | None = None,
+        git_commit_interval: int = 0,
     ):
         """
         Initialize batch manager.
@@ -45,6 +48,9 @@ class BatchManager:
         self.batch_size = batch_size
         self.headless = headless
         self.progress_tracker = progress_tracker
+        self.git_commit_interval = max(git_commit_interval or 0, 0)
+        self._batches_since_commit = 0
+        self._ci_mode = bool(os.environ.get("CI"))
         
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -77,6 +83,43 @@ class BatchManager:
             json.dump(self.metadata, f, indent=2)
         if self.progress_tracker:
             self.progress_tracker.save()
+
+    def _git_commit_batches(self, batch_num: int) -> None:
+        """Stage and commit newly scraped batches while running in CI."""
+        paths = [str(self.output_dir)]
+        if self.progress_tracker:
+            paths.append(str(self.progress_tracker.cache_file))
+        try:
+            subprocess.run(["git", "add", "--", *paths], check=False, capture_output=True)
+            diff = subprocess.run(["git", "diff", "--cached", "--quiet"], check=False)
+            if diff.returncode == 0:
+                logger.debug("No staged changes to commit after batch %s", batch_num)
+                return
+            processed = self.metadata.get("total_processed", 0)
+            commit_msg = (
+                f"data: property detail batches <= {batch_num:04d} ({processed} records)"
+            )
+            subprocess.run(["git", "commit", "-m", commit_msg], check=True, capture_output=True)
+            subprocess.run(["git", "push"], check=True, capture_output=True)
+            logger.info("💾 Committed batches through %s (%s records)", batch_num, processed)
+        except subprocess.CalledProcessError as exc:
+            logger.warning("Git commit failed after batch %s: %s", batch_num, exc)
+        except Exception as exc:
+            logger.warning("Unexpected git error after batch %s: %s", batch_num, exc)
+
+    def _maybe_git_commit(self, batch_num: int, *, force: bool = False) -> None:
+        """Trigger git commits every N batches when enabled."""
+        if not self._ci_mode or self.git_commit_interval <= 0:
+            return
+        if not force:
+            self._batches_since_commit += 1
+            if self._batches_since_commit < self.git_commit_interval:
+                return
+        else:
+            if self._batches_since_commit == 0:
+                return
+        self._batches_since_commit = 0
+        self._git_commit_batches(batch_num)
     
     def _read_urls(self) -> List[Dict[str, str]]:
         """
@@ -241,6 +284,7 @@ class BatchManager:
         self.metadata["total_failed"] += stats["failed"]
         self.metadata["last_batch"] = batch_num
         self._save_metadata()
+        self._maybe_git_commit(batch_num)
         
         logger.info(f"\nBatch {batch_num} complete: {stats['successful']}/{stats['processed']} successful ({stats['success_rate']:.1f}%)")
         return stats
@@ -292,6 +336,7 @@ class BatchManager:
         # Process batches
         start_time = datetime.now()
         
+        last_processed_batch: Optional[int] = None
         for batch_num in range(batch_start, batch_end):
             # Get URLs for this batch
             start_idx = batch_num * self.batch_size
@@ -305,12 +350,16 @@ class BatchManager:
             # Process batch
             try:
                 self.process_batch(batch_num, batch_urls)
+                last_processed_batch = batch_num
             except KeyboardInterrupt:
                 logger.warning("\n⚠ Interrupted by user. Progress saved.")
                 break
             except Exception as e:
                 logger.error(f"Error processing batch {batch_num}: {e}")
                 continue
+
+        if last_processed_batch is not None:
+            self._maybe_git_commit(last_processed_batch, force=True)
         
         # Final statistics
         elapsed = (datetime.now() - start_time).total_seconds()

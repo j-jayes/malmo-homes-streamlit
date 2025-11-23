@@ -86,6 +86,29 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       
+      - name: Resolve area inputs for this run
+        id: resolve-areas
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            MIN_AREA=0
+            MAX_AREA=500
+            INITIAL_STEP=50
+            MAX_PAGES=50
+          else
+            MIN_AREA="${{ github.event.inputs.min_area }}"
+            MAX_AREA="${{ github.event.inputs.max_area }}"
+            INITIAL_STEP="${{ github.event.inputs.initial_step }}"
+            MAX_PAGES="${{ github.event.inputs.max_pages }}"
+          fi
+          echo "Resolved area inputs: ${MIN_AREA}-${MAX_AREA}m² (step=${INITIAL_STEP}, max_pages=${MAX_PAGES})"
+          {
+            echo "RESOLVED_MIN_AREA=${MIN_AREA}"
+            echo "RESOLVED_MAX_AREA=${MAX_AREA}"
+            echo "RESOLVED_INITIAL_STEP=${INITIAL_STEP}"
+            echo "RESOLVED_MAX_PAGES=${MAX_PAGES}"
+          } >> "$GITHUB_ENV"
+      
       - name: Run adaptive area scraper with progress tracking
         id: scrape
         run: |
@@ -93,16 +116,16 @@ jobs:
           
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "Starting adaptive area-based scraping"
-          echo "Area range: ${{ github.event.inputs.min_area }}-${{ github.event.inputs.max_area }}m²"
+          echo "Area range: ${RESOLVED_MIN_AREA}-${RESOLVED_MAX_AREA}m²"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
           # Run adaptive area scraper
           python scripts/scrape_all_areas.py \
             --headless \
-            --min-area ${{ github.event.inputs.min_area }} \
-            --max-area ${{ github.event.inputs.max_area }} \
-            --initial-step ${{ github.event.inputs.initial_step }} \
-            --max-pages ${{ github.event.inputs.max_pages }} \
+            --min-area ${RESOLVED_MIN_AREA} \
+            --max-area ${RESOLVED_MAX_AREA} \
+            --initial-step ${RESOLVED_INITIAL_STEP} \
+            --max-pages ${RESOLVED_MAX_PAGES} \
             --output-dir data/raw/area_ranges || {
               echo "❌ Scraping failed"
               echo "Committing progress before exit..."

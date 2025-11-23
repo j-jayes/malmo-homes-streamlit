@@ -171,6 +171,8 @@ gh workflow run property_detail_runner.yml \
    --field log_level=INFO
 ```
 
+> 💡 Pass `--git-commit-interval N` to `batch_manager_cli` if you need local dry runs to mimic the GitHub Action’s periodic commits (the cron workflow uses `N=4`).
+
 > ℹ️ GitHub only exposes `workflow_dispatch` triggers that exist on the default branch. Merge the workflow first, then use `--ref` to target feature branches if you need to ship canary code.
 
 ### Progress cache & deduplication
@@ -322,10 +324,10 @@ uvicorn app.main:app --reload
 ```
 
 #### Historical backfill cadence (2025 refresh)
-- `scrape_sold_batch.yml` now runs automatically at **00:00 / 06:00 / 12:00 / 18:00 UTC**, staying within the 6-hour GitHub-hosted runner window and resuming from `data/raw/area_ranges/progress.json` if a job times out.
-- `property_detail_runner.yml` follows **30 minutes later** (00:30 / 06:30 / 12:30 / 18:30 UTC) to enrich the CSV manifests produced by the link scraper; it skips any URL fingerprints already present in `data/processed/property_details/gha_runs/*/progress_cache.jsonl`.
+- `scrape_sold_batch.yml` now runs automatically at **00:00 / 06:00 / 12:00 / 18:00 UTC**, staying within the 6-hour GitHub-hosted runner window, resuming from `data/raw/area_ranges/progress.json` if a job times out, and falling back to safe defaults (`min_area=0`, `max_area=500`, `initial_step=50`, `max_pages=50`) whenever a cron trigger omits explicit inputs (the resolved range is logged each run).
+- `property_detail_runner.yml` follows **30 minutes later** (00:30 / 06:30 / 12:30 / 18:30 UTC) to enrich the CSV manifests produced by the link scraper; it skips any URL fingerprints already present in `data/processed/property_details/gha_runs/*/progress_cache.jsonl`, writes batches straight into their timestamped run directory, and now auto-commits every 4 batches (plus the final remainder) so long crawls keep landing parquet files in git even before DuckDB updates finish.
 - Both workflows use concurrency groups so a delayed run queues instead of overlapping, and they respect polite scraping delays via `HEMNET_SOLD_MIN/MAX_DELAY_SECONDS` and `HEMNET_DETAIL_MIN/MAX_DELAY_SECONDS` (default 4–8 s between requests).
-- Each run commits incremental CSV/Parquet outputs plus DuckDB updates, so reruns keep stateful progress and avoid scraping the same range twice.
+- DuckDB commits now happen only when the file is tracked (cron runs skip ignored artifacts), so reruns keep stateful progress without blocking on `.gitignore` while still persisting incremental CSV/Parquet outputs.
 
 ## 🗺️ Coverage
 

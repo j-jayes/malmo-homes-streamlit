@@ -171,6 +171,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Skip rows already tracked as processed (default: true)",
     )
+    parser.add_argument(
+        "--git-commit-interval",
+        type=int,
+        default=0,
+        help="Commit scraped batches to git every N batches when running in CI (0 disables)",
+    )
     return parser
 
 
@@ -230,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         batch_size=max(args.batch_size, 1),
         headless=not args.show_browser,
         progress_tracker=tracker,
+        git_commit_interval=max(args.git_commit_interval, 0),
     )
 
     try:

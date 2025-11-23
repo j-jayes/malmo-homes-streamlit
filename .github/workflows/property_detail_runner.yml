@@ -66,6 +66,7 @@ jobs:
       INPUT_LOG_LEVEL: ${{ inputs.log_level || 'INFO' }}
       HEMNET_DETAIL_MIN_DELAY_SECONDS: 4
       HEMNET_DETAIL_MAX_DELAY_SECONDS: 8
+      PROPERTY_DETAIL_COMMIT_INTERVAL: 4
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -101,15 +102,37 @@ jobs:
           Xvfb :99 -screen 0 1920x1080x24 > /tmp/xvfb.log 2>&1 &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
 
-      - name: Prepare directories
-        run: |
-          mkdir -p "$SCRAPE_OUTPUT"
-          mkdir -p "$(dirname "$SUBSET_CSV")"
-          mkdir -p "$PROCESSED_ROOT"
-
       - name: Capture run timestamp
         id: run_timestamp
         run: echo "utc=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare directories
+        env:
+          RUN_TIMESTAMP: ${{ steps.run_timestamp.outputs.utc }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$SUBSET_CSV")"
+          mkdir -p "$PROCESSED_ROOT"
+          if [ -z "$RUN_TIMESTAMP" ]; then
+            echo "RUN_TIMESTAMP missing"
+            exit 1
+          fi
+          run_dir="$PROCESSED_ROOT/$RUN_TIMESTAMP"
+          if [ -d "$run_dir" ]; then
+            idx=1
+            while [ -d "${run_dir}-retry${idx}" ]; do
+              idx=$((idx+1))
+            done
+            run_dir="${run_dir}-retry${idx}"
+          fi
+          mkdir -p "$run_dir"
+          echo "RUN_DIR=$run_dir" >> "$GITHUB_ENV"
+          echo "SCRAPE_OUTPUT=$run_dir" >> "$GITHUB_ENV"
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Run batch scraper
         id: scrape
@@ -130,6 +153,7 @@ jobs:
             --max-records "$INPUT_MAX_RECORDS" \
             --subset-output "$SUBSET_CSV" \
             --log-level "$INPUT_LOG_LEVEL" \
+            --git-commit-interval "$PROPERTY_DETAIL_COMMIT_INTERVAL" \
             $EXTRA_FLAGS
 
       - name: Summarize results
@@ -167,29 +191,22 @@ jobs:
               fh.write("\n".join(summary_lines) + "\n")
           PY
 
-      - name: Persist processed outputs to repo
+      - name: Record run outputs
         if: ${{ success() }}
         env:
           RUN_TIMESTAMP: ${{ steps.run_timestamp.outputs.utc }}
         run: |
           set -euo pipefail
           source .venv/bin/activate
-          metadata_path="$SCRAPE_OUTPUT/metadata.json"
+          if [ -z "${RUN_DIR:-}" ]; then
+            echo "RUN_DIR not exported; aborting."
+            exit 1
+          fi
+          metadata_path="$RUN_DIR/metadata.json"
           if [ ! -f "$metadata_path" ]; then
             echo "No metadata generated; skipping persistence."
             exit 0
           fi
-          run_dir="$PROCESSED_ROOT/$RUN_TIMESTAMP"
-          if [ -d "$run_dir" ]; then
-            idx=1
-            while [ -d "${run_dir}-retry${idx}" ]; do
-              idx=$((idx+1))
-            done
-            run_dir="${run_dir}-retry${idx}"
-          fi
-          mkdir -p "$run_dir"
-          rsync -a "$SCRAPE_OUTPUT"/ "$run_dir"/
-          export RUN_DIR="$run_dir"
           uv run python - <<'PY'
           import json
           import os
@@ -222,24 +239,55 @@ jobs:
               fh.write(json.dumps(record) + "\n")
           PY
 
+      - name: Commit scraped batches before DuckDB update
+        if: ${{ success() }}
+        env:
+          RUN_TIMESTAMP: ${{ steps.run_timestamp.outputs.utc }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RUN_DIR:-}" ]; then
+            echo "RUN_DIR not exported; skipping early commit."
+            exit 0
+          fi
+          git add "$RUN_DIR"
+          if [ -f "$RUN_INDEX" ]; then
+            git add "$RUN_INDEX"
+          fi
+          if git diff --cached --quiet; then
+            echo "No new batch files to commit."
+            exit 0
+          fi
+          git commit -m "data: property detail batches ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET} max=${INPUT_MAX_RECORDS})"
+          git push
+
       - name: Update DuckDB database
         if: ${{ success() }}
         run: |
           source .venv/bin/activate
           python src/data/aggregate_properties.py
 
-      - name: Commit processed data
+      - name: Commit DuckDB aggregates (optional)
         if: ${{ success() }}
         env:
           RUN_TIMESTAMP: ${{ steps.run_timestamp.outputs.utc }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$PROCESSED_ROOT"
-          git add data/database/properties.duckdb
-          if git diff --cached --quiet; then
-            echo "No processed data changes to commit."
+          staged_any=false
+          status_output="$(git status --short "$PROCESSED_ROOT" 2>/dev/null || true)"
+          if [ -n "$status_output" ]; then
+            git add "$PROCESSED_ROOT"
+            staged_any=true
+          fi
+          if ! git check-ignore -q data/database/properties.duckdb 2>/dev/null; then
+            if [ -f data/database/properties.duckdb ]; then
+              git add data/database/properties.duckdb
+              staged_any=true
+            fi
+          else
+            echo "properties.duckdb is gitignored; skipping stage."
+          fi
+          if ! $staged_any || git diff --cached --quiet; then
+            echo "No aggregate changes to commit."
             exit 0
           fi
           git commit -m "ci: ingest property details ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET} max=${INPUT_MAX_RECORDS})"
