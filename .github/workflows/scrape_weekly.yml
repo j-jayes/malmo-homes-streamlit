@@ -45,10 +45,19 @@ jobs:
           source .venv/bin/activate
           playwright install chromium --with-deps
       
+      - name: Setup virtual display (Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+          sleep 3
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+      
       - name: Collect property links (Malmö)
         run: |
           source .venv/bin/activate
-          python src/scrapers/link_collector.py --location-id 17989 --max-pages 50 --output data/raw/malmo_links_$(date +%Y%m%d).parquet
+          python src/scrapers/link_collector.py --location-id 17989 --max-pages 50 --headless --output data/raw/malmo_links_$(date +%Y%m%d).parquet
         continue-on-error: false
       
       - name: Scrape property details

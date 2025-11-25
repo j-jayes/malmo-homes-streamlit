@@ -45,10 +45,19 @@ class AdaptiveAreaScraper:
         self.progress = self._load_progress()
         
     def _load_progress(self) -> Dict:
-        """Load scraping progress from file"""
+        """Load scraping progress from file with error recovery"""
         if self.progress_file.exists():
-            with open(self.progress_file, 'r') as f:
-                return json.load(f)
+            try:
+                with open(self.progress_file, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"⚠️  Progress file corrupted or unreadable: {e}")
+                logger.warning("   Starting fresh with empty progress...")
+                return {
+                    'completed_ranges': [],
+                    'total_properties': 0,
+                    'started_at': datetime.now().isoformat()
+                }
         return {
             'completed_ranges': [],
             'total_properties': 0,
@@ -56,9 +65,11 @@ class AdaptiveAreaScraper:
         }
     
     def _save_progress(self):
-        """Save current progress to file"""
-        with open(self.progress_file, 'w') as f:
+        """Save current progress to file atomically to prevent corruption"""
+        temp_file = self.progress_file.with_suffix('.json.tmp')
+        with open(temp_file, 'w') as f:
             json.dump(self.progress, f, indent=2)
+        os.replace(temp_file, self.progress_file)
     
     def _is_range_completed(self, area_min: int, area_max: int) -> bool:
         """Check if a range has already been scraped"""

@@ -254,7 +254,7 @@ jobs:
           commit_message: "data: property details ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET})"
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
-          file_pattern: 'data/processed/property_details/* data/database/*.duckdb data/gha_property_batches/*.parquet'
+          file_pattern: 'data/processed/property_details/* data/gha_property_batches/*.parquet'
           commit_options: '--no-verify'
           skip_fetch: false
           skip_checkout: false
