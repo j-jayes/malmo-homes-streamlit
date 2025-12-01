@@ -23,9 +23,9 @@ on:
         required: false
         type: number
         default: 50
-  schedule:
-    # Runs every 6 hours; the detail runner cron starts 30 minutes later
-    - cron: '0 0,6,12,18 * * *'
+  # schedule:
+  #   # Runs every 6 hours; the detail runner cron starts 30 minutes later
+  #   - cron: '0 0,6,12,18 * * *'
 
 permissions:
   contents: write
