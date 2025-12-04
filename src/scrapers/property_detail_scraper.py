@@ -289,9 +289,15 @@ class PropertyScraper:
         data['rooms'] = (next_data.get('numberOfRooms') or 
                         next_data.get('rooms') or
                         next_data.get('roomCount'))
-        data['living_area'] = (next_data.get('livingArea') or 
-                              next_data.get('living_area') or
-                              next_data.get('area'))
+        living_area = (next_data.get('livingArea') or 
+                      next_data.get('living_area'))
+        if isinstance(living_area, (int, float)):
+            data['living_area'] = living_area
+        elif living_area is not None:
+            try:
+                data['living_area'] = float(living_area)
+            except (ValueError, TypeError):
+                data['living_area'] = None
         data['lot_area'] = (next_data.get('landArea') or 
                           next_data.get('plotArea') or
                           next_data.get('lot_area'))
@@ -303,10 +309,17 @@ class PropertyScraper:
         
         data['has_elevator'] = next_data.get('elevator', False) or next_data.get('hasElevator', False)
         data['has_balcony'] = next_data.get('balcony', False) or next_data.get('hasBalcony', False)
-        data['building_year'] = (next_data.get('constructionYear') or 
-                                next_data.get('buildYear') or
-                                next_data.get('yearBuilt') or
-                                next_data.get('legacyConstructionYear'))
+        building_year = (next_data.get('constructionYear') or 
+                        next_data.get('buildYear') or
+                        next_data.get('yearBuilt') or
+                        next_data.get('legacyConstructionYear'))
+        if isinstance(building_year, int):
+            data['building_year'] = building_year
+        elif building_year is not None:
+            try:
+                data['building_year'] = int(building_year)
+            except (ValueError, TypeError):
+                data['building_year'] = None
         data['energy_class'] = next_data.get('energyClass') or next_data.get('energyRating')
         
         # Association info

@@ -41,7 +41,7 @@ class BaseProperty(BaseModel):
     floor: Optional[str] = Field(None, description="Floor number (e.g., '3', '3 av 5')")
     has_elevator: Optional[bool] = Field(None, description="Building has elevator")
     has_balcony: Optional[bool] = Field(None, description="Property has balcony")
-    building_year: Optional[int] = Field(None, ge=1800, le=2030, description="Year built")
+    building_year: Optional[int] = Field(None, ge=1600, le=2030, description="Year built")
     energy_class: Optional[str] = Field(None, description="Energy rating (A-G)")
     
     # Association (for apartments)
