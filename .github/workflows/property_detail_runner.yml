@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       source_csv:
-        description: "CSV file with property URLs (default: all areas aggregated)"
+        description: "CSV file with property URLs (aggregated dataset with ~56K URLs)"
         required: false
         default: data/raw/sold_properties_all_areas.csv
         type: string
       max_records:
-        description: "Maximum records to scrape (0 = all unprocessed)"
+        description: "Maximum records to scrape (0 = all unprocessed URLs, skipping cached)"
         required: false
         default: 0
         type: number
@@ -181,8 +181,8 @@ jobs:
                   cache_data = json.loads(progress_cache_path.read_text())
                   cache_count = len(cache_data.get("identifiers", []))
                   summary_lines.append(f"- **Progress cache**: {cache_count} URLs already scraped")
-              except Exception as e:
-                  summary_lines.append(f"- Progress cache error: {e}")
+              except Exception:
+                  summary_lines.append("- Progress cache error: could not read cache file")
           else:
               summary_lines.append("- Progress cache: not found (starting fresh)")
 
@@ -246,6 +246,7 @@ jobs:
                   cache_data = json.loads(progress_cache_path.read_text())
                   total_scraped = len(cache_data.get("identifiers", []))
               except Exception:
+                  # Cache file may be corrupted or malformed; ignore and use 0
                   pass
 
           record = {
