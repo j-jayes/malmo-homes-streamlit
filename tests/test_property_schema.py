@@ -105,6 +105,47 @@ class TestBaseProperty:
         # Invalid: zero area
         with pytest.raises(ValidationError):
             BaseProperty(**{**data, "living_area": 0.0})
+    
+    def test_building_year_validation(self):
+        """Test building year allows historic buildings."""
+        data = {
+            "property_id": "12345",
+            "property_type": "for_sale",
+            "url": "https://www.hemnet.se/bostad/test",
+            "address": "Test Street 1",
+        }
+        
+        # Valid historic building (17th century)
+        prop = BaseProperty(**{**data, "building_year": 1646})
+        assert prop.building_year == 1646
+        
+        # Valid modern building
+        prop = BaseProperty(**{**data, "building_year": 2020})
+        assert prop.building_year == 2020
+        
+        # Invalid: too old
+        with pytest.raises(ValidationError):
+            BaseProperty(**{**data, "building_year": 1500})
+        
+        # Invalid: future
+        with pytest.raises(ValidationError):
+            BaseProperty(**{**data, "building_year": 2050})
+    
+    def test_living_area_rejects_strings(self):
+        """Test that living_area rejects non-numeric strings (like neighborhood names)."""
+        data = {
+            "property_id": "12345",
+            "property_type": "for_sale",
+            "url": "https://www.hemnet.se/bostad/test",
+            "address": "Test Street 1",
+        }
+        
+        # String neighborhood name should fail validation
+        with pytest.raises(ValidationError):
+            BaseProperty(**{**data, "living_area": "Oxie"})
+        
+        with pytest.raises(ValidationError):
+            BaseProperty(**{**data, "living_area": "Slottsstaden"})
 
 
 class TestSoldProperty:
