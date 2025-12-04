@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       source_csv:
-        description: "CSV file with property URLs (e.g. data/raw/area_ranges/properties_0_31.csv)"
-        required: true
-        default: data/raw/area_ranges/properties_0_31.csv
+        description: "CSV file with property URLs (aggregated dataset with ~56K URLs)"
+        required: false
+        default: data/raw/sold_properties_all_areas.csv
         type: string
       max_records:
-        description: "Maximum records to scrape after offset"
+        description: "Maximum records to scrape (0 = all unprocessed URLs, skipping cached)"
         required: false
-        default: 100
+        default: 0
         type: number
       offset:
         description: "Number of rows to skip before scraping"
@@ -58,15 +58,15 @@ jobs:
       SUBSET_CSV: data/tmp/gha_property_subset.csv
       PROCESSED_ROOT: data/processed/property_details/gha_runs
       RUN_INDEX: data/processed/property_details/gha_runs/index.jsonl
-      INPUT_SOURCE_CSV: ${{ inputs.source_csv || 'data/raw/area_ranges/properties_0_31.csv' }}
+      INPUT_SOURCE_CSV: ${{ inputs.source_csv || 'data/raw/sold_properties_all_areas.csv' }}
       INPUT_OFFSET: ${{ inputs.offset || 0 }}
-      INPUT_MAX_RECORDS: ${{ inputs.max_records || 100 }}
+      INPUT_MAX_RECORDS: ${{ inputs.max_records || 0 }}
       INPUT_BATCH_SIZE: ${{ inputs.batch_size || 5 }}
       INPUT_HEADLESS: ${{ inputs.headless || true }}
       INPUT_LOG_LEVEL: ${{ inputs.log_level || 'INFO' }}
       HEMNET_DETAIL_MIN_DELAY_SECONDS: 4
       HEMNET_DETAIL_MAX_DELAY_SECONDS: 8
-      PROPERTY_DETAIL_COMMIT_INTERVAL: 0 # Disable intermediate commits
+      PROPERTY_DETAIL_COMMIT_INTERVAL: 20 # Commit every 20 batches (100 properties with batch_size=5)
       PROGRESS_CACHE: data/processed/property_details/progress_cache.json
     steps:
       - name: Checkout repository
@@ -171,23 +171,38 @@ jobs:
 
           metadata_path = pathlib.Path(os.environ["SCRAPE_OUTPUT"]) / "metadata.json"
           subset_path = pathlib.Path(os.environ["SUBSET_CSV"]).resolve()
+          progress_cache_path = pathlib.Path(os.environ["PROGRESS_CACHE"]).resolve()
+
+          summary_lines = ["## Property detail scrape"]
+          
+          # Show progress cache stats
+          if progress_cache_path.exists():
+              try:
+                  cache_data = json.loads(progress_cache_path.read_text())
+                  cache_count = len(cache_data.get("identifiers", []))
+                  summary_lines.append(f"- **Progress cache**: {cache_count} URLs already scraped")
+              except Exception:
+                  summary_lines.append("- Progress cache error: could not read cache file")
+          else:
+              summary_lines.append("- Progress cache: not found (starting fresh)")
 
           if not metadata_path.exists():
-              print("No metadata found", file=sys.stderr)
+              summary_lines.append("- ⚠️ No metadata found (no new URLs to scrape)")
+              print("\n".join(summary_lines), file=sys.stderr)
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+                  fh.write("\n".join(summary_lines) + "\n")
               sys.exit(0)
 
           metadata = json.loads(metadata_path.read_text())
-          summary_lines = [
-              "## Property detail scrape",
-              f"- Source CSV: {os.environ['INPUT_SOURCE_CSV']}",
+          summary_lines.extend([
+              f"- Source CSV: `{os.environ['INPUT_SOURCE_CSV']}`",
               f"- Offset: {os.environ['INPUT_OFFSET']}",
-              f"- Max records: {os.environ['INPUT_MAX_RECORDS']}",
-              f"- Processed: {metadata.get('total_processed', 0)}",
-              f"- Successful: {metadata.get('total_successful', 0)}",
-              f"- Failed: {metadata.get('total_failed', 0)}",
-              f"- Output dir: {metadata_path.parent}",
-              f"- Subset CSV: {subset_path}",
-          ]
+              f"- Max records: {os.environ['INPUT_MAX_RECORDS']} (0 = all unprocessed)",
+              f"- **Processed this run**: {metadata.get('total_processed', 0)}",
+              f"- **Successful**: {metadata.get('total_successful', 0)}",
+              f"- **Failed**: {metadata.get('total_failed', 0)}",
+              f"- Output dir: `{metadata_path.parent}`",
+          ])
           print("\n".join(summary_lines))
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
               fh.write("\n".join(summary_lines) + "\n")
@@ -222,6 +237,17 @@ jobs:
           metadata = json.loads(metadata_path.read_text())
           index_path = pathlib.Path(os.environ["RUN_INDEX"])
           index_path.parent.mkdir(parents=True, exist_ok=True)
+          
+          # Get progress cache count
+          progress_cache_path = pathlib.Path(os.environ["PROGRESS_CACHE"])
+          total_scraped = 0
+          if progress_cache_path.exists():
+              try:
+                  cache_data = json.loads(progress_cache_path.read_text())
+                  total_scraped = len(cache_data.get("identifiers", []))
+              except Exception:
+                  # Cache file may be corrupted or malformed; ignore and use 0
+                  pass
 
           record = {
               "run_id": os.environ["GITHUB_RUN_ID"],
@@ -233,6 +259,7 @@ jobs:
               "processed": metadata.get("total_processed", 0),
               "successful": metadata.get("total_successful", 0),
               "failed": metadata.get("total_failed", 0),
+              "total_scraped_to_date": total_scraped,
               "output_path": str(run_dir),
               "artifact_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }
@@ -248,7 +275,7 @@ jobs:
           python src/data/aggregate_properties.py
 
       - name: Commit and push changes
-        if: ${{ success() }}
+        if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "data: property details ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET})"
