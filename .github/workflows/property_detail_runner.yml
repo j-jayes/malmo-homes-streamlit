@@ -66,7 +66,7 @@ jobs:
       INPUT_LOG_LEVEL: ${{ inputs.log_level || 'INFO' }}
       HEMNET_DETAIL_MIN_DELAY_SECONDS: 4
       HEMNET_DETAIL_MAX_DELAY_SECONDS: 8
-      PROPERTY_DETAIL_COMMIT_INTERVAL: 0 # Disable intermediate commits
+      PROPERTY_DETAIL_COMMIT_INTERVAL: 20 # Commit every 20 batches (100 properties with batch_size=5)
       PROGRESS_CACHE: data/processed/property_details/progress_cache.json
     steps:
       - name: Checkout repository
@@ -275,7 +275,7 @@ jobs:
           python src/data/aggregate_properties.py
 
       - name: Commit and push changes
-        if: ${{ success() }}
+        if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "data: property details ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET})"
