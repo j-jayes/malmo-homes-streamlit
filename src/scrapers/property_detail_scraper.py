@@ -297,6 +297,7 @@ class PropertyScraper:
             try:
                 data['living_area'] = float(living_area)
             except (ValueError, TypeError):
+                logger.debug(f"Could not convert living_area to float: {living_area}")
                 data['living_area'] = None
         data['lot_area'] = (next_data.get('landArea') or 
                           next_data.get('plotArea') or
@@ -319,6 +320,7 @@ class PropertyScraper:
             try:
                 data['building_year'] = int(building_year)
             except (ValueError, TypeError):
+                logger.debug(f"Could not convert building_year to int: {building_year}")
                 data['building_year'] = None
         data['energy_class'] = next_data.get('energyClass') or next_data.get('energyRating')
         
