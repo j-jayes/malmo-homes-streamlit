@@ -1326,10 +1326,16 @@
       "file_size_kb": 9.7,
       "timestamp": "2025-12-05T20:40:30.372763",
       "file": "batch_0220.parquet"
+    },
+    "221": {
+      "count": 5,
+      "file_size_kb": 9.8,
+      "timestamp": "2025-12-05T20:41:03.072601",
+      "file": "batch_0221.parquet"
     }
   },
-  "total_processed": 1100,
-  "total_successful": 1100,
+  "total_processed": 1105,
+  "total_successful": 1105,
   "total_failed": 0,
-  "last_batch": 220
+  "last_batch": 221
 }
