@@ -1,7 +1,5 @@
-"""
-Data models for property scraping and storage.
-"""
+"""Data models and ML pipeline for property analysis."""
 
-from .property_schema import BaseProperty, SoldProperty, ForSaleProperty
+from .property_schema import BaseProperty, ForSaleProperty, SoldProperty
 
-__all__ = ['BaseProperty', 'SoldProperty', 'ForSaleProperty']
+__all__ = ["BaseProperty", "SoldProperty", "ForSaleProperty"]

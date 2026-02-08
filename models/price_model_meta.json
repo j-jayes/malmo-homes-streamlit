@@ -1,0 +1,32 @@
+{
+  "feature_names": [
+    "rooms",
+    "living_area",
+    "association_fee",
+    "building_year",
+    "latitude",
+    "longitude",
+    "sale_year",
+    "sale_month",
+    "neighborhood",
+    "housing_type",
+    "ownership_type"
+  ],
+  "numeric_features": [
+    "rooms",
+    "living_area",
+    "association_fee",
+    "building_year",
+    "latitude",
+    "longitude",
+    "sale_year",
+    "sale_month"
+  ],
+  "categorical_features": [
+    "neighborhood",
+    "housing_type",
+    "ownership_type"
+  ],
+  "target": "final_price",
+  "saved_at": "2026-02-08T12:03:03.449127"
+}
