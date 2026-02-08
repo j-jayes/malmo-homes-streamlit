@@ -5,6 +5,7 @@ from app.backend.models import (
     PropertyStats,
     Property,
     PropertyWithPrediction,
+    ActiveListing,
     PredictionRequest,
     PredictionResponse,
 )
@@ -98,6 +99,24 @@ async def get_stats_endpoint():
     from app.backend.database import get_stats
 
     return get_stats()
+
+
+@app.get("/active", response_model=list[ActiveListing])
+async def get_active_listings_endpoint(
+    min_price: float = None,
+    max_price: float = None,
+    min_area: float = None,
+    max_area: float = None,
+    rooms: float = None,
+    neighborhood: str = None,
+    limit: int = 500,
+):
+    """Active (for-sale) listings with ML price predictions."""
+    from app.backend.database import get_active_listings
+
+    return get_active_listings(
+        min_price, max_price, min_area, max_area, rooms, neighborhood, limit
+    )
 
 
 @app.post("/predict", response_model=PredictionResponse)

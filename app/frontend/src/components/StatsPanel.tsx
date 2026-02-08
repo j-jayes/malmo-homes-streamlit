@@ -8,11 +8,18 @@ export function StatsPanel({ stats }: StatsPanelProps) {
     if (!stats) return null;
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <p className="text-sm text-gray-500">Total Properties</p>
+                <p className="text-sm text-gray-500">Sold Properties</p>
                 <p className="text-2xl font-bold text-gray-900">
                     {stats.total_properties.toLocaleString()}
+                </p>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <p className="text-sm text-gray-500">Active Listings</p>
+                <p className="text-2xl font-bold text-blue-600">
+                    {stats.active_listings_count?.toLocaleString() ?? '—'}
                 </p>
             </div>
 

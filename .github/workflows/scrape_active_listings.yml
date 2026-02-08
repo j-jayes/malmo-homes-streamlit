@@ -1,0 +1,180 @@
+name: Active Listings Scraper
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC (08:00 Stockholm time)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: "Search result pages to crawl (0 = all)"
+        required: false
+        default: 20
+        type: number
+      max_records:
+        description: "Max detail pages to scrape (0 = all collected links)"
+        required: false
+        default: 0
+        type: number
+      batch_size:
+        description: "Properties per batch"
+        required: false
+        default: 10
+        type: number
+      predict:
+        description: "Run ML predictions after scraping"
+        required: false
+        default: true
+        type: boolean
+      log_level:
+        description: "Log level"
+        required: false
+        default: INFO
+        type: choice
+        options: [DEBUG, INFO, WARNING]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: active-listings-scraper
+  cancel-in-progress: false
+
+jobs:
+  scrape-active:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
+      HEMNET_DETAIL_MIN_DELAY_SECONDS: 4
+      HEMNET_DETAIL_MAX_DELAY_SECONDS: 8
+      INPUT_MAX_PAGES: ${{ inputs.max_pages || 20 }}
+      INPUT_MAX_RECORDS: ${{ inputs.max_records || 0 }}
+      INPUT_BATCH_SIZE: ${{ inputs.batch_size || 10 }}
+      INPUT_PREDICT: ${{ inputs.predict || true }}
+      INPUT_LOG_LEVEL: ${{ inputs.log_level || 'INFO' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Install project dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e ".[scraping,data]"
+
+      - name: Install Playwright browsers
+        run: |
+          source .venv/bin/activate
+          playwright install chromium --with-deps
+
+      - name: Start virtual display (Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 > /tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run active listings pipeline
+        env:
+          DISPLAY: ${{ env.DISPLAY }}
+        run: |
+          source .venv/bin/activate
+          PREDICT_FLAG=""
+          if [ "$INPUT_PREDICT" = "true" ]; then
+            PREDICT_FLAG="--predict"
+          fi
+          python scripts/scrape_active_listings.py \
+            --max-pages "$INPUT_MAX_PAGES" \
+            --max-records "$INPUT_MAX_RECORDS" \
+            --batch-size "$INPUT_BATCH_SIZE" \
+            --headless \
+            --log-level "$INPUT_LOG_LEVEL" \
+            $PREDICT_FLAG
+
+      - name: Summarize results
+        if: always()
+        run: |
+          source .venv/bin/activate
+          python - <<'PY'
+          import json, os, pathlib, sys
+
+          db_path = pathlib.Path("data/database/properties.duckdb")
+          summary = ["## Active Listings Scrape"]
+
+          if db_path.exists():
+              import duckdb
+              conn = duckdb.connect(str(db_path), read_only=True)
+              try:
+                  count = conn.execute("SELECT COUNT(*) FROM active_listings").fetchone()[0]
+                  summary.append(f"- **Active listings**: {count}")
+              except Exception:
+                  summary.append("- Active listings table not found")
+              try:
+                  pcount = conn.execute("SELECT COUNT(*) FROM active_predictions").fetchone()[0]
+                  summary.append(f"- **Predictions**: {pcount}")
+              except Exception:
+                  summary.append("- Predictions table not found")
+              conn.close()
+          else:
+              summary.append("- Database not found")
+
+          print("\n".join(summary))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write("\n".join(summary) + "\n")
+          PY
+
+      - name: Pull latest changes
+        run: git pull --rebase --autostash
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "data: active listings snapshot ${{ github.run_number }}"
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          file_pattern: 'data/database/*.duckdb data/processed/active_listings/**'
+          commit_options: '--no-verify'
+          skip_fetch: false
+          skip_checkout: false
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-listings-${{ github.run_number }}
+          path: |
+            data/processed/active_listings/
+            /tmp/xvfb.log
+          retention-days: 7
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Active listings scrape failed - ' + new Date().toISOString().split('T')[0],
+              body: 'The active listings scraper failed. Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.',
+              labels: ['automation', 'scraping', 'bug']
+            })

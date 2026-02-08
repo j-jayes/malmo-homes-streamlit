@@ -1,9 +1,11 @@
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { PropertyWithPrediction } from '../api/client';
+import type { PropertyWithPrediction, ActiveListing } from '../api/client';
 
 interface MapProps {
     properties: PropertyWithPrediction[];
+    activeListings?: ActiveListing[];
+    view: 'sold' | 'active';
 }
 
 function getDealColor(pct: number | undefined): string {
@@ -22,7 +24,16 @@ function formatSEK(val: number | undefined): string {
     return val.toLocaleString('sv-SE') + ' kr';
 }
 
-export function Map({ properties }: MapProps) {
+function getActiveColor(pct: number | undefined): string {
+    if (pct === undefined || pct === null) return '#3b82f6'; // blue
+    if (pct <= -15) return '#15803d'; // deep green — great deal
+    if (pct <= -5) return '#22c55e';  // green — good deal
+    if (pct <= 5) return '#3b82f6';   // blue — fair price
+    if (pct <= 15) return '#f97316';  // orange — somewhat overpriced
+    return '#dc2626';                 // red — overpriced
+}
+
+export function Map({ properties, activeListings = [], view }: MapProps) {
     const defaultCenter: [number, number] = [55.604981, 13.003822];
 
     return (
@@ -36,7 +47,9 @@ export function Map({ properties }: MapProps) {
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                {properties.map(
+
+                {/* Sold properties — shown when view is 'sold' */}
+                {view === 'sold' && properties.map(
                     (prop) =>
                         prop.lat &&
                         prop.lng && (
@@ -99,6 +112,87 @@ export function Map({ properties }: MapProps) {
                                         )}
                                         <a
                                             href={prop.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs text-blue-500 hover:underline mt-1 block"
+                                        >
+                                            View on Hemnet →
+                                        </a>
+                                    </div>
+                                </Popup>
+                            </CircleMarker>
+                        )
+                )}
+
+                {/* Active listings — shown when view is 'active' */}
+                {view === 'active' && activeListings.map(
+                    (listing) =>
+                        listing.lat &&
+                        listing.lng && (
+                            <CircleMarker
+                                key={listing.property_id}
+                                center={[listing.lat, listing.lng]}
+                                radius={7}
+                                pathOptions={{
+                                    fillColor: getActiveColor(listing.price_diff_pct),
+                                    color: '#1e40af',
+                                    weight: 2,
+                                    fillOpacity: 0.9,
+                                }}
+                            >
+                                <Popup>
+                                    <div className="min-w-[200px]">
+                                        <div className="flex items-center gap-1 mb-1">
+                                            <span className="bg-blue-100 text-blue-800 text-[10px] font-semibold px-1.5 py-0.5 rounded">FOR SALE</span>
+                                        </div>
+                                        <h3 className="font-bold text-sm mb-1">{listing.address}</h3>
+                                        {listing.neighborhood && (
+                                            <p className="text-xs text-gray-500 mb-2">{listing.neighborhood}</p>
+                                        )}
+                                        <p className="text-xs text-gray-600">
+                                            {listing.rooms} rum · {listing.area} m²
+                                            {listing.monthly_fee ? ` · ${listing.monthly_fee?.toLocaleString('sv-SE')} kr/mån` : ''}
+                                        </p>
+
+                                        <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-gray-500">Asking price</span>
+                                                <span className="font-semibold">{formatSEK(listing.price)}</span>
+                                            </div>
+                                            {listing.predicted_price && (
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-gray-500">ML Predicted</span>
+                                                    <span className="font-medium text-gray-700">
+                                                        {formatSEK(listing.predicted_price)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {listing.price_diff_pct !== undefined && listing.price_diff_pct !== null && (
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-gray-500">vs Prediction</span>
+                                                    <span
+                                                        className={`font-bold ${
+                                                            listing.price_diff_pct < -5
+                                                                ? 'text-green-600'
+                                                                : listing.price_diff_pct > 5
+                                                                ? 'text-red-500'
+                                                                : 'text-gray-600'
+                                                        }`}
+                                                    >
+                                                        {listing.price_diff_pct > 0 ? '+' : ''}
+                                                        {listing.price_diff_pct}%
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {listing.days_on_market !== undefined && listing.days_on_market !== null && (
+                                            <p className="text-xs text-gray-400 mt-2">
+                                                {listing.days_on_market} days on market
+                                            </p>
+                                        )}
+                                        <a
+                                            href={listing.url}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-xs text-blue-500 hover:underline mt-1 block"

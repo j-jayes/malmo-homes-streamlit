@@ -9,6 +9,7 @@ class PropertyStats(BaseModel):
     avg_price_per_sqm: float
     predictions_count: int = 0
     model_avg_error_pct: Optional[float] = None
+    active_listings_count: int = 0
 
 
 class Property(BaseModel):
@@ -60,6 +61,30 @@ class PredictionRequest(BaseModel):
     housing_type: str = Field(default="Lägenhet", description="Housing type")
     ownership_type: str = Field(default="Bostadsrätt", description="Ownership type")
     target_date: Optional[date] = Field(default=None, description="Date to predict price for (default: today)")
+
+
+class ActiveListing(BaseModel):
+    """An active (for-sale) property listing with optional ML prediction."""
+    property_id: str
+    url: str
+    address: Optional[str] = None
+    city: Optional[str] = None
+    price: Optional[float] = None
+    rooms: Optional[float] = None
+    area: Optional[float] = None
+    monthly_fee: Optional[float] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    neighborhood: Optional[str] = None
+    listed_date: Optional[str] = None
+    days_on_market: Optional[int] = None
+    scraped_at: Optional[datetime] = None
+    predicted_price: Optional[int] = None
+    confidence_low: Optional[int] = None
+    confidence_high: Optional[int] = None
+    predicted_price_per_sqm: Optional[int] = None
+    price_diff: Optional[int] = None
+    price_diff_pct: Optional[float] = None
 
 
 class PredictionResponse(BaseModel):

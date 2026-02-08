@@ -45,6 +45,30 @@ export interface PropertyStats {
     avg_price_per_sqm: number;
     predictions_count: number;
     model_avg_error_pct?: number;
+    active_listings_count: number;
+}
+
+export interface ActiveListing {
+    property_id: string;
+    url: string;
+    address?: string;
+    city?: string;
+    price?: number;
+    rooms?: number;
+    area?: number;
+    monthly_fee?: number;
+    lat?: number;
+    lng?: number;
+    neighborhood?: string;
+    listed_date?: string;
+    days_on_market?: number;
+    scraped_at?: string;
+    predicted_price?: number;
+    confidence_low?: number;
+    confidence_high?: number;
+    predicted_price_per_sqm?: number;
+    price_diff?: number;
+    price_diff_pct?: number;
 }
 
 export interface Filters {
@@ -88,6 +112,18 @@ export const api = {
 
     getStats: async () => {
         const response = await axios.get<PropertyStats>(`${API_URL}/stats`);
+        return response.data;
+    },
+
+    getActiveListings: async (filters: Filters = {}) => {
+        const params = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+            if (value !== undefined) params.append(key, value.toString());
+        });
+        const response = await axios.get<ActiveListing[]>(
+            `${API_URL}/active`,
+            { params }
+        );
         return response.data;
     },
 };

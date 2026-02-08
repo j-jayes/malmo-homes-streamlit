@@ -165,6 +165,99 @@ def get_best_deals(limit: int = 10):
     return rows
 
 
+def get_active_listings(
+    min_price: float = None,
+    max_price: float = None,
+    min_area: float = None,
+    max_area: float = None,
+    rooms: float = None,
+    neighborhood: str = None,
+    limit: int = 500,
+):
+    """Query active (for-sale) listings joined with ML predictions."""
+    conn = get_db_connection()
+
+    # Check if tables exist
+    tables = [r[0] for r in conn.execute("SHOW TABLES").fetchall()]
+    if "active_listings" not in tables:
+        conn.close()
+        return []
+
+    has_predictions = "active_predictions" in tables
+
+    if has_predictions:
+        query = """
+            SELECT
+                a.property_id, a.url, a.address, a.city,
+                a.asking_price AS price,
+                a.rooms, a.living_area AS area,
+                a.association_fee AS monthly_fee,
+                a.latitude AS lat, a.longitude AS lng,
+                a.neighborhood,
+                a.listed_date,
+                a.days_on_market,
+                a.scraped_at,
+                ap.predicted_price,
+                ap.confidence_low,
+                ap.confidence_high,
+                ap.predicted_price_per_sqm,
+                ap.price_diff,
+                ap.price_diff_pct
+            FROM active_listings a
+            LEFT JOIN active_predictions ap ON a.property_id = ap.property_id
+            WHERE a.asking_price IS NOT NULL
+        """
+    else:
+        query = """
+            SELECT
+                a.property_id, a.url, a.address, a.city,
+                a.asking_price AS price,
+                a.rooms, a.living_area AS area,
+                a.association_fee AS monthly_fee,
+                a.latitude AS lat, a.longitude AS lng,
+                a.neighborhood,
+                a.listed_date,
+                a.days_on_market,
+                a.scraped_at,
+                NULL AS predicted_price,
+                NULL AS confidence_low,
+                NULL AS confidence_high,
+                NULL AS predicted_price_per_sqm,
+                NULL AS price_diff,
+                NULL AS price_diff_pct
+            FROM active_listings a
+            WHERE a.asking_price IS NOT NULL
+        """
+
+    params = []
+    if min_price:
+        query += " AND a.asking_price >= ?"
+        params.append(min_price)
+    if max_price:
+        query += " AND a.asking_price <= ?"
+        params.append(max_price)
+    if min_area:
+        query += " AND a.living_area >= ?"
+        params.append(min_area)
+    if max_area:
+        query += " AND a.living_area <= ?"
+        params.append(max_area)
+    if rooms:
+        query += " AND a.rooms >= ?"
+        params.append(rooms)
+    if neighborhood:
+        query += " AND a.neighborhood = ?"
+        params.append(neighborhood)
+
+    query += " ORDER BY a.scraped_at DESC LIMIT ?"
+    params.append(limit)
+
+    result = conn.execute(query, params)
+    rows = _rows_to_dicts(result)
+    conn.close()
+    return rows
+
+
 def get_stats():
     """Get basic statistics including prediction model coverage."""
     conn = get_db_connection()
@@ -187,6 +280,12 @@ def get_stats():
         WHERE price_diff_pct IS NOT NULL
     """).fetchone()
 
+    active_count = 0
+    try:
+        active_count = conn.execute("SELECT COUNT(*) FROM active_listings").fetchone()[0]
+    except Exception:
+        pass
+
     conn.close()
 
     return {
@@ -195,4 +294,5 @@ def get_stats():
         "avg_price_per_sqm": result[2] or 0,
         "predictions_count": pred_result[0] if pred_result else 0,
         "model_avg_error_pct": round(pred_result[1], 1) if pred_result and pred_result[1] else None,
+        "active_listings_count": active_count,
     }
