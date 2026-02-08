@@ -2,10 +2,14 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime, date
 
+
 class PropertyStats(BaseModel):
     total_properties: int
     avg_price: float
     avg_price_per_sqm: float
+    predictions_count: int = 0
+    model_avg_error_pct: Optional[float] = None
+
 
 class Property(BaseModel):
     property_id: str
@@ -20,6 +24,28 @@ class Property(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
     scraped_at: datetime
+
+
+class PropertyWithPrediction(BaseModel):
+    property_id: str
+    url: str
+    address: Optional[str] = None
+    city: Optional[str] = None
+    price: Optional[float] = None
+    rooms: Optional[float] = None
+    area: Optional[float] = None
+    monthly_fee: Optional[float] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    neighborhood: Optional[str] = None
+    sold_date: Optional[str] = None
+    scraped_at: Optional[datetime] = None
+    predicted_price: Optional[int] = None
+    confidence_low: Optional[int] = None
+    confidence_high: Optional[int] = None
+    predicted_price_per_sqm: Optional[int] = None
+    price_diff: Optional[int] = None
+    price_diff_pct: Optional[float] = None
 
 
 class PredictionRequest(BaseModel):

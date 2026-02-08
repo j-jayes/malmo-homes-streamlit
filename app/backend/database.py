@@ -1,21 +1,23 @@
 import duckdb
 from pathlib import Path
-import os
 
-# Define database path relative to project root
-# Assuming running from project root
 DB_PATH = Path("data/database/properties.duckdb")
 
+
 def get_db_connection():
-    """Create a connection to the DuckDB database."""
+    """Create a read-only connection to the DuckDB database."""
     if not DB_PATH.exists():
-        # Fallback for development if running from app/backend
         alt_path = Path("../../data/database/properties.duckdb")
         if alt_path.exists():
             return duckdb.connect(str(alt_path), read_only=True)
         raise FileNotFoundError(f"Database not found at {DB_PATH}")
-    
     return duckdb.connect(str(DB_PATH), read_only=True)
+
+
+def _rows_to_dicts(conn) -> list[dict]:
+    columns = [desc[0] for desc in conn.description]
+    return [dict(zip(columns, row)) for row in conn.fetchall()]
+
 
 def get_properties(
     min_price: float = None,
@@ -23,29 +25,24 @@ def get_properties(
     min_area: float = None,
     max_area: float = None,
     rooms: float = None,
-    limit: int = 1000
+    limit: int = 1000,
 ):
     """Query properties with filters."""
     conn = get_db_connection()
-    
+
     query = """
-        SELECT 
-            property_id, 
-            url, 
-            address, 
-            city, 
+        SELECT
+            property_id, url, address, city,
             COALESCE(final_price, asking_price) as price,
-            rooms, 
-            living_area as area, 
-            association_fee as monthly_fee, 
-            latitude as lat, 
-            longitude as lng,
+            rooms, living_area as area,
+            association_fee as monthly_fee,
+            latitude as lat, longitude as lng,
             scraped_at
         FROM properties
         WHERE 1=1
     """
     params = []
-    
+
     if min_price:
         query += " AND COALESCE(final_price, asking_price) >= ?"
         params.append(min_price)
@@ -61,39 +58,141 @@ def get_properties(
     if rooms:
         query += " AND rooms >= ?"
         params.append(rooms)
-        
+
     query += " ORDER BY scraped_at DESC LIMIT ?"
     params.append(limit)
-    
-    # Execute and fetch as dicts
-    result = conn.execute(query, params).fetchall()
-    columns = [desc[0] for desc in conn.description]
-    
-    properties = []
-    for row in result:
-        properties.append(dict(zip(columns, row)))
-        
+
+    result = conn.execute(query, params)
+    rows = _rows_to_dicts(result)
     conn.close()
-    return properties
+    return rows
+
+
+def get_properties_with_predictions(
+    min_price: float = None,
+    max_price: float = None,
+    min_area: float = None,
+    max_area: float = None,
+    rooms: float = None,
+    neighborhood: str = None,
+    limit: int = 1000,
+):
+    """Query properties joined with pre-computed predictions."""
+    conn = get_db_connection()
+
+    query = """
+        SELECT
+            p.property_id, p.url, p.address, p.city,
+            COALESCE(p.final_price, p.asking_price) AS price,
+            p.rooms, p.living_area AS area,
+            p.association_fee AS monthly_fee,
+            p.latitude AS lat, p.longitude AS lng,
+            p.neighborhood,
+            p.sold_date,
+            p.scraped_at,
+            pr.predicted_price,
+            pr.confidence_low,
+            pr.confidence_high,
+            pr.predicted_price_per_sqm,
+            pr.price_diff,
+            pr.price_diff_pct
+        FROM properties p
+        INNER JOIN predictions pr ON p.property_id = pr.property_id
+        WHERE COALESCE(p.final_price, p.asking_price) IS NOT NULL
+    """
+    params = []
+
+    if min_price:
+        query += " AND COALESCE(p.final_price, p.asking_price) >= ?"
+        params.append(min_price)
+    if max_price:
+        query += " AND COALESCE(p.final_price, p.asking_price) <= ?"
+        params.append(max_price)
+    if min_area:
+        query += " AND p.living_area >= ?"
+        params.append(min_area)
+    if max_area:
+        query += " AND p.living_area <= ?"
+        params.append(max_area)
+    if rooms:
+        query += " AND p.rooms >= ?"
+        params.append(rooms)
+    if neighborhood:
+        query += " AND p.neighborhood = ?"
+        params.append(neighborhood)
+
+    query += " ORDER BY p.scraped_at DESC LIMIT ?"
+    params.append(limit)
+
+    result = conn.execute(query, params)
+    rows = _rows_to_dicts(result)
+    conn.close()
+    return rows
+
+
+def get_best_deals(limit: int = 10):
+    """Return properties that sold most below their predicted price (biggest bargains)."""
+    conn = get_db_connection()
+
+    query = """
+        SELECT
+            p.property_id, p.url, p.address, p.city,
+            COALESCE(p.final_price, p.asking_price) AS price,
+            p.rooms, p.living_area AS area,
+            p.association_fee AS monthly_fee,
+            p.latitude AS lat, p.longitude AS lng,
+            p.neighborhood,
+            p.sold_date,
+            p.scraped_at,
+            pr.predicted_price,
+            pr.confidence_low,
+            pr.confidence_high,
+            pr.predicted_price_per_sqm,
+            pr.price_diff,
+            pr.price_diff_pct
+        FROM properties p
+        INNER JOIN predictions pr ON p.property_id = pr.property_id
+        WHERE pr.price_diff IS NOT NULL
+          AND pr.price_diff_pct < -5
+          AND COALESCE(p.final_price, p.asking_price) IS NOT NULL
+          AND p.sold_date >= '2024-01-01'
+        ORDER BY pr.price_diff_pct ASC
+        LIMIT ?
+    """
+    result = conn.execute(query, [limit])
+    rows = _rows_to_dicts(result)
+    conn.close()
+    return rows
+
 
 def get_stats():
-    """Get basic statistics about the dataset."""
+    """Get basic statistics including prediction model coverage."""
     conn = get_db_connection()
-    
-    query = """
-        SELECT 
+
+    result = conn.execute("""
+        SELECT
             COUNT(*) as total_properties,
             AVG(COALESCE(final_price, asking_price)) as avg_price,
             AVG(COALESCE(final_price, asking_price) / NULLIF(living_area, 0)) as avg_price_per_sqm
         FROM properties
-        WHERE COALESCE(final_price, asking_price) IS NOT NULL AND living_area IS NOT NULL
-    """
-    
-    result = conn.execute(query).fetchone()
+        WHERE COALESCE(final_price, asking_price) IS NOT NULL
+          AND living_area IS NOT NULL
+    """).fetchone()
+
+    pred_result = conn.execute("""
+        SELECT
+            COUNT(*) as predictions_count,
+            AVG(ABS(price_diff_pct)) as avg_abs_error_pct
+        FROM predictions
+        WHERE price_diff_pct IS NOT NULL
+    """).fetchone()
+
     conn.close()
-    
+
     return {
         "total_properties": result[0],
         "avg_price": result[1] or 0,
-        "avg_price_per_sqm": result[2] or 0
+        "avg_price_per_sqm": result[2] or 0,
+        "predictions_count": pred_result[0] if pred_result else 0,
+        "model_avg_error_pct": round(pred_result[1], 1) if pred_result and pred_result[1] else None,
     }

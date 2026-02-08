@@ -1,20 +1,24 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.backend.database import get_db_connection
-from app.backend.models import PropertyStats, Property, PredictionRequest, PredictionResponse
+from app.backend.models import (
+    PropertyStats,
+    Property,
+    PropertyWithPrediction,
+    PredictionRequest,
+    PredictionResponse,
+)
 
 app = FastAPI(title="Malmo Homes API")
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite default port
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Lazy-loaded prediction service (initialised on first /predict call)
 _prediction_service = None
 
 
@@ -32,13 +36,14 @@ def _get_prediction_service():
         _prediction_service = PredictionService.from_artifact(model_path)
     return _prediction_service
 
+
 @app.get("/")
 async def root():
     return {"message": "Malmo Homes API is running"}
 
+
 @app.get("/health")
 async def health_check():
-    """Check database connection"""
     try:
         conn = get_db_connection()
         conn.execute("SELECT 1")
@@ -47,6 +52,7 @@ async def health_check():
     except Exception as e:
         return {"status": "unhealthy", "database": str(e)}
 
+
 @app.get("/properties", response_model=list[Property])
 async def get_properties_endpoint(
     min_price: float = None,
@@ -54,21 +60,48 @@ async def get_properties_endpoint(
     min_area: float = None,
     max_area: float = None,
     rooms: float = None,
-    limit: int = 1000
+    limit: int = 1000,
 ):
-    """Get properties with optional filters."""
     from app.backend.database import get_properties
+
     return get_properties(min_price, max_price, min_area, max_area, rooms, limit)
+
+
+@app.get("/properties/predicted", response_model=list[PropertyWithPrediction])
+async def get_properties_with_predictions_endpoint(
+    min_price: float = None,
+    max_price: float = None,
+    min_area: float = None,
+    max_area: float = None,
+    rooms: float = None,
+    neighborhood: str = None,
+    limit: int = 1000,
+):
+    """Properties enriched with pre-computed price predictions."""
+    from app.backend.database import get_properties_with_predictions
+
+    return get_properties_with_predictions(
+        min_price, max_price, min_area, max_area, rooms, neighborhood, limit
+    )
+
+
+@app.get("/deals", response_model=list[PropertyWithPrediction])
+async def get_best_deals_endpoint(limit: int = 10):
+    """Top deals — properties that sold most below their predicted value."""
+    from app.backend.database import get_best_deals
+
+    return get_best_deals(limit)
+
 
 @app.get("/stats", response_model=PropertyStats)
 async def get_stats_endpoint():
-    """Get dataset statistics."""
     from app.backend.database import get_stats
+
     return get_stats()
+
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_price(request: PredictionRequest):
-    """Predict property price given features and an optional target date."""
     from fastapi import HTTPException
 
     try:
