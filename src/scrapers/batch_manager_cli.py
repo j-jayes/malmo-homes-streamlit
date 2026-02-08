@@ -267,7 +267,13 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Success rate: %.1f%%", success_rate)
     if tracker:
         tracker.save()
-    return 0 if metadata.get("total_failed", 0) == 0 else 1
+
+    # Tolerate up to 10% failure rate — validation rejects (low prices, etc.)
+    # are expected for a small fraction of listings.
+    if success_rate >= 90.0:
+        return 0
+    logger.error("Success rate %.1f%% is below 90%% threshold", success_rate)
+    return 1
 
 
 if __name__ == "__main__":
