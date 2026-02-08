@@ -1,27 +1,26 @@
-"""
-Unified Hemnet Property Detail Scraper
-Handles both for-sale (/bostad/) and sold (/salda/) properties
-Extracts all fields and validates with Pydantic schemas
+"""Unified Hemnet Property Detail Scraper.
+
+Handles both for-sale (/bostad/) and sold (/salda/) properties.
+Extracts all fields from __NEXT_DATA__ / Apollo State and validates with Pydantic schemas.
+
+The scraper maintains a persistent browser session to avoid ~1-2s launch overhead per URL.
 """
 
+from __future__ import annotations
+
 import json
-import re
-import time
 import logging
 import os
 import random
-from datetime import datetime, date
-from playwright.sync_api import sync_playwright, Page
-from typing import Dict, Optional, Tuple, List
-from pathlib import Path
-import sys
+import re
+import time
+from datetime import date, datetime
+from typing import Dict, Optional, Tuple
 
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent))
+from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
-from src.models.property_schema import BaseProperty, SoldProperty, ForSaleProperty
+from src.models.property_schema import BaseProperty, ForSaleProperty, SoldProperty
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -45,30 +44,80 @@ def _respectful_sleep(default_min: float = 5.0, default_max: float | None = None
 
 
 class PropertyScraper:
-    """Unified scraper for both sold and for-sale properties."""
-    
-    def __init__(self, headless: bool = False, slow_mo: int = 100):
+    """Scraper for individual Hemnet property pages.
+
+    Manages a persistent Playwright browser so that many properties can be
+    scraped without paying the browser-launch overhead per URL.
+
+    Usage::
+
+        with PropertyScraper(headless=True) as scraper:
+            for url in urls:
+                result = scraper.scrape_property(url)
+    """
+
+    def __init__(self, headless: bool = True, slow_mo: int = 0) -> None:
         self.headless = headless
         self.slow_mo = slow_mo
-        self.requests_log = []
-        
-    def detect_property_type(self, url: str) -> str:
-        """
-        Detect property type from URL.
-        
-        Returns:
-            'sold' or 'for_sale'
-        """
-        if '/salda/' in url:
-            return 'sold'
-        elif '/bostad/' in url:
-            return 'for_sale'
-        else:
-            raise ValueError(f"Unknown property type in URL: {url}")
-    
-    def extract_property_id(self, url: str) -> str:
-        """Extract property ID from URL (last component)."""
-        return url.rstrip('/').split('-')[-1]
+        self._playwright: Playwright | None = None
+        self._browser: Browser | None = None
+        self.requests_log: list[dict] = []
+
+    def _ensure_browser(self) -> Browser:
+        if self._browser and self._browser.is_connected():
+            return self._browser
+        if self._playwright is None:
+            self._playwright = sync_playwright().start()
+        self._browser = self._playwright.chromium.launch(
+            headless=self.headless,
+            slow_mo=self.slow_mo,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+            ],
+        )
+        return self._browser
+
+    def _new_context(self) -> BrowserContext:
+        browser = self._ensure_browser()
+        return browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            viewport={"width": 1920, "height": 1080},
+            locale="sv-SE",
+            timezone_id="Europe/Stockholm",
+        )
+
+    def close(self) -> None:
+        if self._browser:
+            try:
+                self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
+        if self._playwright:
+            try:
+                self._playwright.stop()
+            except Exception:
+                pass
+            self._playwright = None
+
+    def __enter__(self) -> "PropertyScraper":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    @staticmethod
+    def detect_property_type(url: str) -> str:
+        if "/salda/" in url:
+            return "sold"
+        if "/bostad/" in url:
+            return "for_sale"
+        raise ValueError(f"Unknown property type in URL: {url}")
+
+    @staticmethod
+    def extract_property_id(url: str) -> str:
+        return url.rstrip("/").split("-")[-1]
     
     def _handle_cloudflare(self, page: Page) -> None:
         """Wait for Cloudflare challenge if present."""
@@ -425,159 +474,45 @@ class PropertyScraper:
         return data
     
     def scrape_property(self, url: str) -> Optional[BaseProperty]:
-        """
-        Scrape a single property and return validated model.
-        
-        Args:
-            url: Full Hemnet URL
-            
-        Returns:
-            SoldProperty or ForSaleProperty instance, or None if scraping fails
-        """
-        # Detect property type
+        """Scrape a single property page and return a validated Pydantic model."""
         property_type = self.detect_property_type(url)
         property_id = self.extract_property_id(url)
-        
-        logger.info(f"Scraping {property_type} property: {property_id}")
-        
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=self.headless,
-                slow_mo=self.slow_mo,
-                args=[
-                    '--disable-blink-features=AutomationControlled',
-                    '--no-sandbox',
-                ]
-            )
-            
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-                viewport={'width': 1920, 'height': 1080},
-                locale='sv-SE',
-                timezone_id='Europe/Stockholm'
-            )
-            
-            page = context.new_page()
-            self._setup_request_interception(page)
-            
-            try:
-                # Load page
-                logger.info(f"Loading: {url}")
-                page.goto(url, wait_until='domcontentloaded', timeout=60000)
-                
-                # Handle Cloudflare
-                self._handle_cloudflare(page)
-                
-                # Wait for content to load
-                page.wait_for_timeout(5000)
-                
-                # Extract coordinates from network requests
-                coords = self._extract_coordinates_from_requests()
-                
-                # Extract __NEXT_DATA__ and Apollo State
-                result = self._extract_next_data(page)
-                if not result:
-                    logger.error("Failed to extract property data")
-                    return None
-                
-                next_data, apollo_state = result
-                
-                # Extract common fields
-                data = self._extract_common_fields(next_data, coords, apollo_state)
-                
-                # Add base fields
-                data['property_id'] = property_id
-                data['property_type'] = property_type
-                data['url'] = url
-                data['scraped_at'] = datetime.now()
-                
-                # Extract type-specific fields
-                if property_type == 'sold':
-                    data.update(self._extract_sold_fields(next_data))
-                    # Create and validate model
-                    property_model = SoldProperty(**data)
-                    property_model.calculate_derived_fields()
-                else:
-                    data.update(self._extract_for_sale_fields(next_data))
-                    # Create and validate model
-                    property_model = ForSaleProperty(**data)
-                    property_model.calculate_derived_fields()
-                
-                logger.info(f"✓ Successfully scraped {property_type} property")
-                return property_model
-                
-            except Exception as e:
-                logger.error(f"Error scraping property: {e}", exc_info=True)
+
+        context = self._new_context()
+        page = context.new_page()
+        self._setup_request_interception(page)
+
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            self._handle_cloudflare(page)
+            page.wait_for_timeout(5000)
+
+            coords = self._extract_coordinates_from_requests()
+            result = self._extract_next_data(page)
+            if not result:
+                logger.error("Failed to extract property data from %s", url)
                 return None
-            
-            finally:
-                browser.close()
 
+            next_data, apollo_state = result
+            data = self._extract_common_fields(next_data, coords, apollo_state)
+            data["property_id"] = property_id
+            data["property_type"] = property_type
+            data["url"] = url
+            data["scraped_at"] = datetime.now()
 
-def main():
-    """Test the unified scraper."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Scrape Hemnet property details')
-    parser.add_argument('--url', type=str, help='Property URL to scrape')
-    parser.add_argument('--headless', action='store_true', help='Run in headless mode')
-    parser.add_argument('--test', action='store_true', help='Run test on example URLs')
-    
-    args = parser.parse_args()
-    
-    scraper = PropertyScraper(headless=args.headless)
-    
-    if args.test or not args.url:
-        print("=" * 80)
-        print("Testing Unified Property Scraper")
-        print("=" * 80)
-        
-        # Test URLs
-        test_urls = {
-            'sold': 'https://www.hemnet.se/salda/lagenhet-3rum-vastra-hamnen-malmo-kommun-stormastgatan-5-6303039936076543572',
-            'for_sale': 'https://www.hemnet.se/bostad/lagenhet-2rum-slottsstaden-malmo-kommun-ostra-stallmastaregatan-5b-21629409'
-        }
-        
-        for prop_type, url in test_urls.items():
-            print(f"\n{'='*80}")
-            print(f"Testing {prop_type.upper()} property")
-            print(f"{'='*80}")
-            
-            result = scraper.scrape_property(url)
-            
-            if result:
-                print("\n✅ SUCCESS!")
-                print(f"\nProperty ID: {result.property_id}")
-                print(f"Type: {result.property_type}")
-                print(f"Address: {result.address}")
-                print(f"City: {result.city}")
-                print(f"Neighborhood: {result.neighborhood}")
-                print(f"Rooms: {result.rooms}")
-                print(f"Area: {result.living_area} m²")
-                print(f"Coordinates: {result.latitude}, {result.longitude}")
-                
-                if isinstance(result, SoldProperty):
-                    print(f"\nAsking: {result.asking_price:,} SEK")
-                    print(f"Final: {result.final_price:,} SEK")
-                    print(f"Change: {result.price_change:,} SEK ({result.price_change_pct:.1f}%)")
-                    print(f"Sold: {result.sold_date}")
-                else:
-                    print(f"\nAsking: {result.asking_price:,} SEK")
-                    print(f"Price/m²: {result.price_per_sqm:,.0f} SEK/m²")
-                    if result.viewing_times:
-                        print(f"Viewings: {len(result.viewing_times)}")
+            if property_type == "sold":
+                data.update(self._extract_sold_fields(next_data))
+                model = SoldProperty(**data)
             else:
-                print("\n❌ FAILED to scrape property")
-            
-            _respectful_sleep()
-    
-    elif args.url:
-        result = scraper.scrape_property(args.url)
-        if result:
-            print(result.model_dump_json(indent=2))
-        else:
-            print("Failed to scrape property")
+                data.update(self._extract_for_sale_fields(next_data))
+                model = ForSaleProperty(**data)
 
+            model.calculate_derived_fields()
+            return model
 
-if __name__ == "__main__":
-    main()
+        except Exception as exc:
+            logger.error("Error scraping %s: %s", url, exc, exc_info=True)
+            return None
+        finally:
+            page.close()
+            context.close()

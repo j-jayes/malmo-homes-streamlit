@@ -12,7 +12,7 @@ permissions:
 jobs:
   scrape-properties:
     runs-on: ubuntu-latest
-    timeout-minutes: 120 # 2 hour timeout for scraping
+    timeout-minutes: 350 # ~6 hour GitHub Actions limit, with margin
     
     steps:
       - name: Checkout repository
@@ -64,7 +64,7 @@ jobs:
         run: |
           source .venv/bin/activate
           # Use batch_manager_cli for robust scraping and Parquet output
-          uv run python -m src.scrapers.batch_manager_cli \
+          python -m src.scrapers.batch_manager_cli \
             --input data/raw/malmo_links_$(date +%Y%m%d).parquet \
             --output-dir data/processed/property_details/gha_runs/weekly_$(date +%Y%m%d) \
             --batch-size 10 \

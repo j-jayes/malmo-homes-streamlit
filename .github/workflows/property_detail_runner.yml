@@ -39,7 +39,7 @@ on:
           - WARNING
   schedule:
     # Offset by 30 minutes from link scraping cadence
-    - cron: '30 0,6,12,18 * * *'
+    - cron: '30 0,12 * * *'
 
 permissions:
   contents: write
@@ -51,7 +51,7 @@ concurrency:
 jobs:
   scrape-details:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 350
     env:
       PYTHONUNBUFFERED: "1"
       SCRAPE_OUTPUT: data/gha_property_batches
@@ -146,7 +146,7 @@ jobs:
           if [ "$HEADLESS_FLAG" = 'false' ]; then
             EXTRA_FLAGS="--show-browser"
           fi
-          uv run python -m src.scrapers.batch_manager_cli \
+          python -m src.scrapers.batch_manager_cli \
             --input "$INPUT_SOURCE_CSV" \
             --output-dir "$SCRAPE_OUTPUT" \
             --batch-size "$INPUT_BATCH_SIZE" \
@@ -163,7 +163,7 @@ jobs:
         id: summary
         run: |
           source .venv/bin/activate
-          uv run python - <<'PY'
+          python - <<'PY'
           import json
           import os
           import pathlib
@@ -224,7 +224,7 @@ jobs:
             echo "No metadata generated; skipping persistence."
             exit 0
           fi
-          uv run python - <<'PY'
+          python - <<'PY'
           import json
           import os
           import pathlib

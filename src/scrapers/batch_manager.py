@@ -1,8 +1,10 @@
+"""Batch processing manager for property scraping.
+
+Reads URLs from CSV/Parquet, scrapes in batches via PropertyScraper,
+saves results as Parquet files, and tracks progress with resume capability.
 """
-Batch processing manager for property scraping.
-Handles reading URLs from CSV, scraping in batches, saving to Parquet files,
-and tracking progress with resume capability.
-"""
+
+from __future__ import annotations
 
 import csv
 import json
@@ -12,12 +14,13 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from src.scrapers.property_detail_scraper import PropertyScraper
+from src.models.property_schema import BaseProperty
 from src.scrapers.progress_tracker import ProgressTracker
-from src.models.property_schema import BaseProperty, SoldProperty, ForSaleProperty
+from src.scrapers.property_detail_scraper import PropertyScraper
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +271,10 @@ class BatchManager:
             with open(failures_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=['url', 'error'])
                 writer.writeheader()
-                writer.writerows(failed)
+                writer.writerows(
+                    {'url': row.get('url', ''), 'error': row.get('error', '')}
+                    for row in failed
+                )
             logger.warning(f"Saved {len(failed)} failures to {failures_file}")
         
         # Update metadata
@@ -380,46 +386,4 @@ class BatchManager:
     
     def close(self):
         """Close the scraper and clean up resources."""
-        if hasattr(self.scraper, 'browser') and self.scraper.browser:
-            self.scraper.browser.close()
-        if hasattr(self.scraper, 'playwright') and self.scraper.playwright:
-            self.scraper.playwright.stop()
-
-
-if __name__ == "__main__":
-    # Example usage
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Batch process property URLs")
-    parser.add_argument("--input", required=True, help="Input CSV file with URLs")
-    parser.add_argument("--output", required=True, help="Output directory for Parquet files")
-    parser.add_argument("--batch-size", type=int, default=100, help="Batch size (default: 100)")
-    parser.add_argument("--batch-start", type=int, help="Starting batch number")
-    parser.add_argument("--batch-end", type=int, help="Ending batch number")
-    parser.add_argument("--no-resume", action="store_true", help="Don't resume from last batch")
-    parser.add_argument("--no-headless", action="store_true", help="Show browser")
-    
-    args = parser.parse_args()
-    
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
-    
-    # Create and run batch manager
-    manager = BatchManager(
-        input_file=args.input,
-        output_dir=args.output,
-        batch_size=args.batch_size,
-        headless=not args.no_headless
-    )
-    
-    try:
-        manager.process_all(
-            batch_start=args.batch_start,
-            batch_end=args.batch_end,
-            resume=not args.no_resume
-        )
-    finally:
-        manager.close()
+        self.scraper.close()
