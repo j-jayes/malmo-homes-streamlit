@@ -23,6 +23,8 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
+from src.data.description_archive import DescriptionArchive
+
 logger = logging.getLogger(__name__)
 
 TABLE_NAME = "active_listings"
@@ -33,6 +35,9 @@ def aggregate_active_listings(
     db_path: Path,
 ) -> int:
     """Replace the ``active_listings`` table with data from *input_dir*.
+
+    Before replacing, descriptions are archived to the persistent
+    ``description_archive`` table so they survive across daily runs.
 
     Returns the number of rows written.
     """
@@ -45,6 +50,9 @@ def aggregate_active_listings(
 
     logger.info("Found %d parquet files in %s", len(parquet_files), input_dir)
     files_str = [str(p) for p in parquet_files]
+
+    archive = DescriptionArchive(db_path)
+    archive.upsert_from_parquet(parquet_files)
 
     conn = duckdb.connect(str(db_path))
     try:
