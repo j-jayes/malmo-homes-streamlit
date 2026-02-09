@@ -50,6 +50,13 @@ ml = [
     "lightgbm>=4.5.0",
     "scikit-learn>=1.5.0",
     "joblib>=1.4.0",
+    "nltk>=3.9.0",
+]
+
+# NLP text analysis (Phase 2+)
+nlp = [
+    "sentence-transformers>=3.0.0",
+    "shap>=0.43.0",
 ]
 
 # Report generation

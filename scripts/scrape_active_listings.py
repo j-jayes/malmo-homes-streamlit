@@ -30,7 +30,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_LOCATION_ID = "17989"  # Malmö
+DEFAULT_LOCATION_ID = ""  # Empty = all of Sweden
 DEFAULT_DB = PROJECT_ROOT / "data" / "database" / "properties.duckdb"
 DEFAULT_MODEL = PROJECT_ROOT / "models" / "price_model.joblib"
 
@@ -54,11 +54,11 @@ def collect_links(
     """
     from src.scrapers.link_collector import scrape_multiple_pages, save_links_to_parquet
 
-    base_url = (
-        f"https://www.hemnet.se/bostader?"
-        f"item_types=bostadsratt&expand_locations=10000&location_ids={location_id}"
-    )
-    logger.info("Collecting active listing links (location_id=%s, max_pages=%s)", location_id, max_pages)
+    base_url = "https://www.hemnet.se/bostader?item_types=bostadsratt"
+    if location_id:
+        base_url += f"&expand_locations=10000&location_ids={location_id}"
+    scope = location_id or "all-Sweden"
+    logger.info("Collecting active listing links (scope=%s, max_pages=%s)", scope, max_pages)
     results = scrape_multiple_pages(base_url, max_pages=max_pages, headless=headless)
 
     total_links = sum(len(r.get("links", [])) for r in results)
@@ -129,8 +129,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Scrape active Hemnet listings end-to-end",
     )
-    parser.add_argument("--location-id", default=DEFAULT_LOCATION_ID)
-    parser.add_argument("--max-pages", type=int, default=20, help="Search result pages to crawl")
+    parser.add_argument("--location-id", default=DEFAULT_LOCATION_ID, help="Hemnet location ID (empty=all Sweden)")
+    parser.add_argument("--max-pages", type=int, default=50, help="Search result pages to crawl (Hemnet max=50)")
     parser.add_argument("--max-records", type=int, default=0, help="Max detail pages to scrape (0=all)")
     parser.add_argument("--batch-size", type=int, default=10)
     parser.add_argument("--output-dir", type=Path, default=Path("data/processed/active_listings"))

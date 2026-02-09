@@ -21,14 +21,20 @@ data-collection infrastructure needed before NLP modelling can begin.
 
 ## Next Steps (when ~200+ descriptions accumulated)
 
-- [ ] **Run full active listings scrape** — `python scripts/scrape_active_listings.py --predict`
-      to collect all ~700 Malmö bostadsrätt descriptions.
-- [ ] **Create TF-IDF exploration notebook** — `notebooks/text_analysis_exploration.ipynb`
-      with Swedish preprocessing, word frequencies, correlation with asking price.
-- [ ] **Build `TextFeatureExtractor` class** — `src/features/text_features.py`
-      with TF-IDF pipeline, Swedish stop words, custom domain stop words.
-- [ ] **Train residual model** — Predict asking price from structural features,
-      compute residual, fit Ridge/Lasso on TF-IDF → residual.
+- [x] **Update scraper for all Sweden** — Empty location_id for country-wide scraping,
+      GHA timeout set to 350 min (5h50m), max_pages=50 (Hemnet cap of 2,500 listings).
+- [x] **Build `TextFeatureExtractor` class** — `src/features/text_features.py`
+      with TF-IDF pipeline, Swedish stop words, custom domain stop words,
+      agent boilerplate stripping.
+- [x] **Build `TextPricePipeline` class** — `src/models/text_pipeline.py`
+      with residual computation, Ridge regression, power-word ranking.
+- [x] **Expand description archive schema** — Added city, lat, lng, building_year,
+      association_fee, housing_type, ownership_type for accurate residual computation.
+- [x] **Run 200 active listings scrape** — 195/200 successful (97.5%) across
+      83 cities, 146 neighborhoods. Lat range 55.4°–63.8°N (all Sweden).
+- [x] **Train text pipeline** — R²=0.044 on 193 docs (expected with all-Sweden mix).
+      Premium words: toppläge, fönsterpartier, gäst wc, låg belåning.
+      Discount words: lantlig, bara flytta, campus, renoverade.
 - [ ] **Power words ranking** — Top-N premium/discount words bar chart.
 - [ ] **Frontend: Ad Analyzer page** — `POST /analyze-text` endpoint +
       `AdAnalyzer.tsx` component.
