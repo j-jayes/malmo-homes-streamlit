@@ -3948,10 +3948,82 @@
       "file_size_kb": 9.73,
       "timestamp": "2026-02-12T18:32:56.560922",
       "file": "batch_0659.parquet"
+    },
+    "660": {
+      "count": 5,
+      "file_size_kb": 9.72,
+      "timestamp": "2026-02-12T18:33:31.755656",
+      "file": "batch_0660.parquet"
+    },
+    "661": {
+      "count": 5,
+      "file_size_kb": 9.72,
+      "timestamp": "2026-02-12T18:34:03.125286",
+      "file": "batch_0661.parquet"
+    },
+    "662": {
+      "count": 5,
+      "file_size_kb": 9.77,
+      "timestamp": "2026-02-12T18:34:33.915166",
+      "file": "batch_0662.parquet"
+    },
+    "663": {
+      "count": 5,
+      "file_size_kb": 9.73,
+      "timestamp": "2026-02-12T18:35:04.878562",
+      "file": "batch_0663.parquet"
+    },
+    "664": {
+      "count": 5,
+      "file_size_kb": 9.75,
+      "timestamp": "2026-02-12T18:35:35.584825",
+      "file": "batch_0664.parquet"
+    },
+    "665": {
+      "count": 5,
+      "file_size_kb": 9.72,
+      "timestamp": "2026-02-12T18:36:06.882250",
+      "file": "batch_0665.parquet"
+    },
+    "666": {
+      "count": 5,
+      "file_size_kb": 9.71,
+      "timestamp": "2026-02-12T18:36:37.846326",
+      "file": "batch_0666.parquet"
+    },
+    "667": {
+      "count": 5,
+      "file_size_kb": 9.89,
+      "timestamp": "2026-02-12T18:37:08.993658",
+      "file": "batch_0667.parquet"
+    },
+    "668": {
+      "count": 5,
+      "file_size_kb": 9.72,
+      "timestamp": "2026-02-12T18:37:40.268802",
+      "file": "batch_0668.parquet"
+    },
+    "669": {
+      "count": 5,
+      "file_size_kb": 9.82,
+      "timestamp": "2026-02-12T18:38:10.941263",
+      "file": "batch_0669.parquet"
+    },
+    "670": {
+      "count": 5,
+      "file_size_kb": 9.64,
+      "timestamp": "2026-02-12T18:38:42.059954",
+      "file": "batch_0670.parquet"
+    },
+    "671": {
+      "count": 5,
+      "file_size_kb": 9.77,
+      "timestamp": "2026-02-12T18:39:13.567492",
+      "file": "batch_0671.parquet"
     }
   },
-  "total_processed": 3300,
-  "total_successful": 3287,
+  "total_processed": 3360,
+  "total_successful": 3347,
   "total_failed": 13,
-  "last_batch": 659
+  "last_batch": 671
 }
