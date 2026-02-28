@@ -273,6 +273,11 @@ jobs:
         run: |
           source .venv/bin/activate
           python src/data/aggregate_properties.py
+          
+      - name: Match active listings descriptions to sold properties
+        run: |
+          source .venv/bin/activate
+          python scripts/match_active_to_sold.py
 
       - name: Commit and push changes
         if: always()

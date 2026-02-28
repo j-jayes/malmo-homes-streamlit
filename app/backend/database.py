@@ -296,3 +296,48 @@ def get_stats():
         "model_avg_error_pct": round(pred_result[1], 1) if pred_result and pred_result[1] else None,
         "active_listings_count": active_count,
     }
+
+
+def get_nlp_training_data(limit: int = 5000):
+    """Retrieve text descriptions paired with final sale prices for NLP modeling."""
+    conn = get_db_connection()
+    
+    # Check if necessary tables exist
+    tables = [r[0] for r in conn.execute("SHOW TABLES").fetchall()]
+    if "description_archive" not in tables or "properties" not in tables:
+        conn.close()
+        return []
+
+    # Get description, original asking price, and final sold price for computing differences
+    query = """
+        SELECT
+            d.property_id as active_id,
+            p.property_id as sold_id,
+            d.description,
+            d.city,
+            d.neighborhood,
+            d.rooms,
+            d.living_area as area,
+            d.asking_price,
+            p.final_price,
+            p.price_change,
+            p.price_change_pct,
+            p.sold_date,
+            p.days_on_market
+        FROM description_archive d
+        JOIN properties p ON d.sold_property_id = p.property_id
+        WHERE d.description IS NOT NULL
+          AND p.final_price IS NOT NULL
+    """
+    
+    query += " ORDER BY p.sold_date DESC LIMIT ?"
+    
+    try:
+        result = conn.execute(query, [limit])
+        rows = _rows_to_dicts(result)
+        return rows
+    except Exception as e:
+        print(f"Error executing NLP query: {e}")
+        return []
+    finally:
+        conn.close()

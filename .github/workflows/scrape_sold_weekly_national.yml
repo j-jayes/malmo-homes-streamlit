@@ -1,0 +1,123 @@
+name: Scrape Sold Properties (National Weekly)
+
+on:
+  schedule:
+    # Run once a week on Sunday at 2 AM
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Test mode (only 2 pages)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scrape-sold-national
+  cancel-in-progress: false
+
+jobs:
+  scrape-sold-national:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      HEMNET_SOLD_MIN_DELAY_SECONDS: 4
+      HEMNET_SOLD_MAX_DELAY_SECONDS: 8
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install dependencies with uv
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e ".[scraping]"
+      
+      - name: Install Playwright and browsers
+        run: |
+          source .venv/bin/activate
+          playwright install chromium --with-deps
+      
+      - name: Setup virtual display (Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+          sleep 3
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+      
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      
+      - name: Run adaptive area scraper for national recent sales
+        run: |
+          source .venv/bin/activate
+          
+          CMD="python scripts/scrape_all_areas.py --location-id \"\" --sold-age 1m --headless --output-dir data/raw/area_ranges_national"
+          if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
+            CMD="$CMD --max-pages 2 --min-area 80 --max-area 85"
+          fi
+          
+          echo "Running: $CMD"
+          eval $CMD || {
+            echo "❌ Scraping failed"
+            git add data/raw/area_ranges_national/*.csv data/raw/area_ranges_national/*.json data/.hemnet_session.json 2>/dev/null || true
+            git diff --staged --quiet || git commit -m "data: partial national sold scrape (failed)"
+            git push || true
+            exit 1
+          }
+        env:
+          DISPLAY: ${{ env.DISPLAY }}
+          CI: "true"
+
+      - name: Consolidate and Append to master list
+        run: |
+          # The scraper consolidates into data/raw/sold_properties_all_areas.csv by default,
+          # but since we output to area_ranges_national, we need to manually consolidate or let the script do it.
+          # We'll just run consolidate with python to append to our main sold_properties_all_areas.csv
+          source .venv/bin/activate
+          python -c "
+import pandas as pd
+from pathlib import Path
+new_files = list(Path('data/raw/area_ranges_national').glob('properties_*.csv'))
+if not new_files:
+    print('No files found')
+    exit(0)
+new_df = pd.concat([pd.read_csv(f) for f in new_files])
+main_file = Path('data/raw/sold_properties_all_areas.csv')
+if main_file.exists():
+    main_df = pd.read_csv(main_file)
+    combined = pd.concat([main_df, new_df]).drop_duplicates(subset=['property_id'], keep='last')
+else:
+    combined = new_df
+combined.to_csv(main_file, index=False)
+print(f'Done combining. Total rows: {len(combined)}')
+"
+      - name: Push results
+        run: |
+          git pull origin main || true
+          git add data/raw/area_ranges_national/*.csv data/raw/area_ranges_national/*.json data/raw/sold_properties_all_areas.csv data/.hemnet_session.json 2>/dev/null || true
+          if ! git diff --staged --quiet; then
+            git commit -m "data: append weekly national sold properties"
+            git push
+          fi

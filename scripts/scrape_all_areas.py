@@ -34,8 +34,9 @@ class AdaptiveAreaScraper:
     MIN_STEP = 1  # Minimum step size in m² (was 5, but dense areas need finer granularity)
     MAX_AREA = 500  # Maximum reasonable apartment size
     
-    def __init__(self, location_id: str = "17989", headless: bool = True, output_dir: Path = None):
+    def __init__(self, location_id: str = "17989", headless: bool = True, output_dir: Path = None, sold_age: str = None):
         self.location_id = location_id
+        self.sold_age = sold_age
         self.scraper = SoldPropertiesScraper(headless=headless, slow_mo=0 if headless else 100)
         self.output_dir = output_dir or Path("data/raw/area_ranges")
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -129,7 +130,8 @@ class AdaptiveAreaScraper:
         initial_count = self.scraper.get_total_results_count(
             location_id=self.location_id,
             area_min=min_area,
-            area_max=min(initial_max, self.MAX_AREA)
+            area_max=min(initial_max, self.MAX_AREA),
+            sold_age=self.sold_age
         )
         
         logger.info(f"  Initial range {min_area}-{min(initial_max, self.MAX_AREA)}m²: {initial_count} results")
@@ -159,7 +161,8 @@ class AdaptiveAreaScraper:
             count = self.scraper.get_total_results_count(
                 location_id=self.location_id,
                 area_min=min_area,
-                area_max=mid
+                area_max=mid,
+                sold_age=self.sold_age
             )
             
             logger.info(f"  Testing {min_area}-{mid}m²: {count} results")
@@ -194,7 +197,8 @@ class AdaptiveAreaScraper:
                 area_min=area_min,
                 area_max=area_max,
                 location_id=self.location_id,
-                max_pages=max_pages
+                max_pages=max_pages,
+                sold_age=self.sold_age
             )
             
             # Save this range's data
@@ -311,6 +315,8 @@ def main():
                        help='Ending living area in m² (default: 500)')
     parser.add_argument('--output-dir', type=str,
                        help='Output directory for range files')
+    parser.add_argument('--sold-age', type=str, default=None,
+                       help='Max sold age (e.g., "1m" for 1 month, "12m" for 1 year). Valid values: 1m, 3m, 6m, 12m')
     parser.add_argument('--headless', action='store_true',
                        help='Run in headless mode (recommended for production)')
     parser.add_argument('--consolidate-only', action='store_true',
@@ -324,7 +330,8 @@ def main():
     scraper = AdaptiveAreaScraper(
         location_id=args.location_id,
         headless=args.headless,
-        output_dir=output_dir
+        output_dir=output_dir,
+        sold_age=args.sold_age
     )
     
     if args.consolidate_only:

@@ -160,7 +160,7 @@ class SoldPropertiesScraper:
             logger.debug(f"Could not extract total results: {e}")
             return 0
     
-    def get_total_results_count(self, location_id: str, area_min: int, area_max: int) -> int:
+    def get_total_results_count(self, location_id: str, area_min: int, area_max: int, sold_age: str = None) -> int:
         """Get result count for an area range without scraping full pages"""
         
         with sync_playwright() as p:
@@ -173,7 +173,11 @@ class SoldPropertiesScraper:
                 context = self._setup_browser_context(browser)
                 page = context.new_page()
                 
-                url = f"{self.BASE_URL}?item_types[]=bostadsratt&location_ids[]={location_id}&living_area_min={area_min}&living_area_max={area_max}"
+                url = f"{self.BASE_URL}?item_types[]=bostadsratt&living_area_min={area_min}&living_area_max={area_max}"
+                if location_id:
+                    url += f"&location_ids[]={location_id}"
+                if sold_age:
+                    url += f"&sold_age={sold_age}"
                 
                 logger.info(f"Checking result count for area {area_min}-{area_max}m²")
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -197,7 +201,8 @@ class SoldPropertiesScraper:
         area_min: int,
         area_max: int,
         location_id: str = "17989",
-        max_pages: int = 50
+        max_pages: int = 50,
+        sold_age: str = None
     ) -> List[Dict]:
         """Scrape sold properties within a specific living area range
         
@@ -232,7 +237,11 @@ class SoldPropertiesScraper:
                 page = context.new_page()
                 
                 # Build URL with living area filter
-                url = f"{self.BASE_URL}?item_types[]=bostadsratt&location_ids[]={location_id}&living_area_min={area_min}&living_area_max={area_max}"
+                url = f"{self.BASE_URL}?item_types[]=bostadsratt&living_area_min={area_min}&living_area_max={area_max}"
+                if location_id:
+                    url += f"&location_ids[]={location_id}"
+                if sold_age:
+                    url += f"&sold_age={sold_age}"
                 
                 logger.info(f"Navigating to: {url}")
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)

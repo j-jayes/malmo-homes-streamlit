@@ -220,17 +220,18 @@ uvicorn app.main:app --reload
 ### Component 2: Live Monitoring (Ongoing)
 
 **Active Listings Scraper:**
-- 📅 **Weekly scraping** every Sunday
-- 🎯 **Target:** ~1,500 active properties
-- 🔍 **Purpose:** Find underpriced opportunities
+- 📅 **Daily/Weekly scraping** pipelines
+- 🎯 **Target:** Broad country-wide scan collecting ~2,500 active properties daily
+- 🔍 **Purpose:** Find underpriced opportunities and store raw property descriptions in the `description_archive`
 - 📊 **Compare:** Asking price vs predicted fair value
 - 🚨 **Alerts:** Price drops, new listings, anomalies
 
 **Transition Tracking:**
-- 🔗 **Match:** Active listing → Sold property
+- 🔗 **Match:** Active listing descriptions → Later Sold property IDs
+- 📝 **NLP Modelling:** Collect ad-copy to predict price premiums dynamically based on specific descriptive keywords.
 - 📈 **Analyze:** Success rate of "underpriced" predictions
 - ⏱️ **Calculate:** Time-on-market, negotiation patterns
-- 🔄 **Update:** Retrain models with fresh sales data
+- 🔄 **Update:** Retrain models with fresh sales data via automated DuckDB jobs
 
 ### 1. Data Collection Flow
 
@@ -305,52 +306,45 @@ uvicorn app.main:app --reload
 
 ### GitHub Actions Workflows
 
-**Weekly Scraping** (Sunday 00:00 UTC):
-```yaml
-# .github/workflows/scrape_weekly.yml
-- Collect new property links
-- Scrape property details
-- Update DuckDB database
-- Generate reports
-- Commit to gh-pages branch
-```
+**Weekly Active Listing Orchestrator** (e.g., `scrape_active_listings.yml`):
+- Operates automatically to collect property descriptions globally.
+- Updates DuckDB with daily snapshots and stores copies of property listings before they are sold and anonymized.
 
-**Report Generation** (Sunday 01:00 UTC):
-```yaml
-# .github/workflows/generate_reports.yml
-- Run Quarto reports
-- Generate HTML and PDF
-- Deploy to GitHub Pages
-```
+**Weekly National Recent Sold Scrape** (`scrape_sold_weekly_national.yml`):
+- Runs every Sunday at 02:00 UTC.
+- Targets recent sales exclusively (past 1 month) across all of Sweden setting `--sold-age 1m`.
+- Appends new properties to the central manifest so the detail runner captures them accurately.
 
-#### Historical backfill cadence (2025 refresh)
-- `scrape_sold_batch.yml` now runs automatically at **00:00 / 06:00 / 12:00 / 18:00 UTC**, staying within the 6-hour GitHub-hosted runner window, resuming from `data/raw/area_ranges/progress.json` if a job times out, and falling back to safe defaults (`min_area=0`, `max_area=500`, `initial_step=50`, `max_pages=50`) whenever a cron trigger omits explicit inputs (the resolved range is logged each run).
-- `property_detail_runner.yml` follows **30 minutes later** (00:30 / 06:30 / 12:30 / 18:30 UTC) to enrich the CSV manifests produced by the link scraper; it skips any URL fingerprints already present in `data/processed/property_details/gha_runs/*/progress_cache.jsonl`, writes batches straight into their timestamped run directory, and now auto-commits every 4 batches (plus the final remainder) so long crawls keep landing parquet files in git even before DuckDB updates finish.
-- Both workflows use concurrency groups so a delayed run queues instead of overlapping, and they respect polite scraping delays via `HEMNET_SOLD_MIN/MAX_DELAY_SECONDS` and `HEMNET_DETAIL_MIN/MAX_DELAY_SECONDS` (default 4–8 s between requests).
-- DuckDB commits now happen only when the file is tracked (cron runs skip ignored artifacts), so reruns keep stateful progress without blocking on `.gitignore` while still persisting incremental CSV/Parquet outputs.
+#### Historical backfill cadence (2025/2026 refresh)
+- `scrape_sold_batch.yml` runs batch routines adaptively splitting large property clusters into digestible bounds (to avoid Hemnet's 2,500 result limit), staying within the 6-hour GitHub-hosted runner window, and resuming cleanly from `progress.json`.
+- `property_detail_runner.yml` is the primary workhorse, extracting interior layout details after links are staged. It skips parsed fingerprints in `progress_cache.jsonl` and auto-commits directly to Parquet and DuckDB.
+- **Auto NLP cross-matching:** The backend matches archived active-listing descriptions to their closing properties via `scripts/match_active_to_sold.py` inside the detail runner automatically.
+- Both workflows use concurrency groups, so a delayed run queues instead of overlapping, and they respect polite scraping delays (`HEMNET_SOLD_MIN/MAX_DELAY_SECONDS`).
 
 ## 🗺️ Coverage
 
 ### Current Regions
-- ✅ **Malmö** (Location ID: 17989)
+- ✅ **Malmö** (Location ID: 17989) (Historical Backfill Complete)
+- ✅ **All of Sweden** (Recent months only via weekly national polling)
+- ✅ **All of Sweden** (Active listings dynamically gathered via country-wide scan)
 
 ### Planned Expansion
-- ⏳ Stockholm
-- ⏳ Gothenburg
-- ⏳ All of Sweden
+- ⏳ Complete historical backfill for Stockholm & Gothenburg
 
 ## 📈 Analytics Features
 
 ### Implemented
-- Property price distributions
-- Price per m² by neighborhood
-- Historical price tracking
-- Basic market trends
+- ✅ Property price distributions
+- ✅ Price per m² by neighborhood
+- ✅ Historical price tracking
+- ✅ Market trends (Inflation adjusted)
+- ✅ 🔮 Price prediction ML model (Numerical baseline)
+- ✅ 📝 NLP Pipeline for Property text-description modelling
+- ✅ 🔔 Automated active listing monitoring and DuckDB integration
 
 ### Planned
-- 🔮 Price prediction ML model
-- 📊 Market trend forecasting
-- 🏘️ Neighborhood profiling
+- 📊 Advanced Market trend forecasting
+- 🏘️ Deep Neighborhood profiling
 - 🔍 Property comparison tool
 - 🔔 Price drop alerts
 - ⏱️ Days-on-market analysis
