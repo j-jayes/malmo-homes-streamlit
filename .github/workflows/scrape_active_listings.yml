@@ -47,6 +47,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  issues: write
 
 concurrency:
   group: active-listings-scraper
@@ -193,9 +194,13 @@ jobs:
       - name: Build active export manifest (dry-run)
         if: always()
         run: |
-          source .venv/bin/activate
-          RUN_DATE="$(date -u +%Y%m%d)"
-          python scripts/export_active_artifacts.py --run-date "$RUN_DATE" --log-level INFO
+          if [ -f scripts/export_active_artifacts.py ]; then
+            source .venv/bin/activate
+            RUN_DATE="$(date -u +%Y%m%d)"
+            python scripts/export_active_artifacts.py --run-date "$RUN_DATE" --log-level INFO
+          else
+            echo "No export manifest script found; skipping dry-run manifest generation"
+          fi
 
       - name: Azure login (OIDC)
         if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
@@ -258,6 +263,14 @@ jobs:
           skip_fetch: false
           skip_checkout: false
 
+      - name: Collect Xvfb log
+        if: always()
+        run: |
+          mkdir -p tmp
+          if [ -f /tmp/xvfb.log ]; then
+            cp /tmp/xvfb.log tmp/xvfb.log
+          fi
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -265,7 +278,7 @@ jobs:
           name: active-listings-${{ github.run_number }}
           path: |
             data/processed/active_listings/
-            /tmp/xvfb.log
+            tmp/xvfb.log
           retention-days: 7
 
       - name: Create issue on failure
