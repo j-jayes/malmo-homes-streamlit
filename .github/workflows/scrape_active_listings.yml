@@ -264,7 +264,7 @@ jobs:
           commit_message: "data: active listings snapshot ${{ github.run_number }}"
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
-          file_pattern: 'data/database/*.duckdb data/processed/active_listings/**'
+          file_pattern: 'data/processed/active_listings/**'
           commit_options: '--no-verify'
           skip_fetch: false
           skip_checkout: false
