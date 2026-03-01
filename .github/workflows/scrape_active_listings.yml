@@ -76,7 +76,7 @@ jobs:
       INPUT_MAX_PAGES: ${{ inputs.max_pages || 50 }}
       INPUT_MAX_RECORDS: ${{ inputs.max_records || 0 }}
       INPUT_BATCH_SIZE: ${{ inputs.batch_size || 10 }}
-      INPUT_PREDICT: ${{ inputs.predict || true }}
+      INPUT_PREDICT: ${{ github.event_name == 'schedule' && 'true' || (inputs.predict && 'true' || 'false') }}
       INPUT_LOG_LEVEL: ${{ inputs.log_level || 'INFO' }}
 
     steps:
