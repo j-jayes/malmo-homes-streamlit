@@ -103,7 +103,7 @@ class DescriptionArchive:
                     '{today}'::DATE AS first_seen,
                     '{today}'::DATE AS last_seen,
                     scraped_at
-                FROM read_parquet($1)
+                                FROM read_parquet($1, union_by_name = true)
                 WHERE description IS NOT NULL
                   AND LENGTH(TRIM(description)) > 0
                 ON CONFLICT (property_id) DO UPDATE

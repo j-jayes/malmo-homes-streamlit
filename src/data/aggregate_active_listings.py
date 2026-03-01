@@ -60,7 +60,7 @@ def aggregate_active_listings(
         conn.execute(f"""
             CREATE TABLE {TABLE_NAME} AS
             SELECT *
-            FROM read_parquet($1)
+            FROM read_parquet($1, union_by_name = true)
             QUALIFY ROW_NUMBER() OVER (
                 PARTITION BY property_id ORDER BY scraped_at DESC
             ) = 1
