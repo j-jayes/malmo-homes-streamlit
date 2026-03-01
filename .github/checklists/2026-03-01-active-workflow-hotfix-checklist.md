@@ -8,5 +8,5 @@ Stabilize the active listings GitHub Actions workflow after first manual validat
 - [x] Prevent missing manifest helper from failing the run.
 - [x] Fix artifact upload path to avoid absolute-path root expansion.
 - [x] Ensure workflow token has permission to create issues on failure.
-- [ ] Re-run low-volume manual active workflow validation.
-- [ ] Confirm Azure OIDC login and blob upload complete successfully.
+- [x] Re-run low-volume manual active workflow validation.
+- [x] Confirm Azure OIDC login and blob upload complete successfully.
