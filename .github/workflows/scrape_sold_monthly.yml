@@ -1,11 +1,19 @@
-name: Scrape Sold Properties (Monthly)
+name: "Scrape Sold Properties (Monthly Backfill, manual)"
 
 on:
-  schedule:
-    # First day of every month at 3 AM UTC
-    - cron: '0 3 1 * *'
   workflow_dispatch:
     inputs:
+      run_scope:
+        description: 'Run scope'
+        required: false
+        type: choice
+        options: [national, region, city]
+        default: national
+      location_id:
+        description: 'Hemnet location ID (required for city/region scope)'
+        required: false
+        type: string
+        default: ''
       month:
         description: 'Month to scrape (YYYY-MM)'
         required: false
@@ -19,11 +27,24 @@ on:
 permissions:
   contents: write
   issues: write
+  id-token: write
 
 jobs:
   scrape-sold-properties:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      BLOB_WRITE_ENABLED: ${{ vars.BLOB_WRITE_ENABLED || 'false' }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME || '' }}
+      BLOB_CONTAINER: ${{ vars.BLOB_CONTAINER || '' }}
+      BLOB_PREFIX: ${{ vars.BLOB_PREFIX || 'sweden-housing' }}
+      BLOB_PROCESSED_PREFIX: ${{ vars.BLOB_PROCESSED_PREFIX || 'processed' }}
+      BLOB_MODELS_PREFIX: models
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      INPUT_RUN_SCOPE: ${{ inputs.run_scope || 'national' }}
+      INPUT_LOCATION_ID: ${{ inputs.location_id || '' }}
     
     steps:
       - name: Checkout repository
@@ -73,13 +94,25 @@ jobs:
           fi
           echo "month=$MONTH" >> $GITHUB_OUTPUT
           echo "Scraping month: $MONTH"
+
+      - name: Validate run scope inputs
+        run: |
+          if [ "$INPUT_RUN_SCOPE" != "national" ] && [ -z "$INPUT_LOCATION_ID" ]; then
+            echo "$INPUT_RUN_SCOPE scope requires location_id"
+            exit 1
+          fi
       
       - name: Run scraper
         run: |
           source .venv/bin/activate
+
+          LOCATION_FLAG=""
+          if [ -n "$INPUT_LOCATION_ID" ]; then
+            LOCATION_FLAG="--location-id $INPUT_LOCATION_ID"
+          fi
           
           # Build command
-          CMD="python src/scrapers/sold_properties_scraper.py --month ${{ steps.month.outputs.month }} --headless"
+          CMD="python src/scrapers/sold_properties_scraper.py --month ${{ steps.month.outputs.month }} --headless $LOCATION_FLAG"
           
           # Add test flag if needed
           if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
@@ -117,9 +150,42 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "data: add sold properties for ${{ steps.month.outputs.month }}"
-          file_pattern: 'data/raw/sold_properties_*.csv data/.hemnet_session.json'
+          file_pattern: 'data/raw/sold_properties_*.parquet data/.hemnet_session.json'
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Azure login (OIDC)
+        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload monthly sold artifact to Azure Blob (OIDC)
+        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
+        run: |
+          set -euo pipefail
+          MONTH="${{ steps.month.outputs.month }}"
+          FILE="data/raw/sold_properties_${MONTH//-/}.parquet"
+          RUN_DATE_PARTITION="${MONTH}-01"
+
+          if [ -f "$FILE" ]; then
+            az storage blob upload \
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+              --container-name "$BLOB_CONTAINER" \
+              --name "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/sold_links/run_date=$RUN_DATE_PARTITION/$(basename "$FILE")" \
+              --file "$FILE" \
+              --overwrite true \
+              --auth-mode login
+          else
+            echo "No monthly sold parquet found; skipping blob upload"
+          fi
+
+      - name: Blob export skipped notice
+        if: always() && !(env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != '')
+        run: |
+          echo "Blob export skipped. Ensure BLOB_WRITE_ENABLED=true, AZURE_STORAGE_ACCOUNT_NAME, BLOB_CONTAINER, and OIDC secrets are configured."
       
       - name: Upload scraping logs
         if: always()
@@ -127,7 +193,7 @@ jobs:
         with:
           name: sold-scraping-logs-${{ steps.month.outputs.month }}
           path: |
-            data/raw/sold_properties_*.csv
+            data/raw/sold_properties_*.parquet
           retention-days: 30
       
       - name: Create issue on failure

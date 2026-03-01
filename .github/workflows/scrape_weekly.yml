@@ -1,20 +1,42 @@
-name: Weekly Property Scraping
+name: "LEGACY (manual only): Weekly Property Scraping"
 
 on:
-  schedule:
-    # Run every Sunday at 00:00 UTC
-    - cron: '0 0 * * 0'
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch: # Legacy manual-only trigger
+    inputs:
+      confirm_legacy_run:
+        description: "Type EXACTLY 'RUN_LEGACY_MALMO' to execute this legacy Malmö workflow"
+        required: true
+        default: ""
+        type: string
 
 permissions:
   contents: write # Required to commit and push changes
+  id-token: write
 
 jobs:
   scrape-properties:
     runs-on: ubuntu-latest
     timeout-minutes: 350 # ~6 hour GitHub Actions limit, with margin
+    env:
+      BLOB_WRITE_ENABLED: ${{ vars.BLOB_WRITE_ENABLED || 'false' }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME || '' }}
+      BLOB_CONTAINER: ${{ vars.BLOB_CONTAINER || '' }}
+      BLOB_PREFIX: ${{ vars.BLOB_PREFIX || 'sweden-housing' }}
+      BLOB_RAW_PREFIX: ${{ vars.BLOB_RAW_PREFIX || 'raw' }}
+      BLOB_PROCESSED_PREFIX: ${{ vars.BLOB_PROCESSED_PREFIX || 'processed' }}
+      BLOB_MODELS_PREFIX: models
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     
     steps:
+      - name: Confirm legacy workflow execution
+        run: |
+          if [ "${{ github.event.inputs.confirm_legacy_run }}" != "RUN_LEGACY_MALMO" ]; then
+            echo "Legacy Malmö workflow blocked. Provide confirm_legacy_run=RUN_LEGACY_MALMO to run intentionally."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -96,6 +118,49 @@ jobs:
           commit_options: '--no-verify'
           skip_fetch: false
           skip_checkout: false
+
+      - name: Azure login (OIDC)
+        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload legacy Malmö outputs to Azure Blob (OIDC)
+        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
+        run: |
+          set -euo pipefail
+          RUN_DATE="$(date -u +%Y%m%d)"
+          RUN_DATE_PARTITION="${RUN_DATE:0:4}-${RUN_DATE:4:2}-${RUN_DATE:6:2}"
+
+          LINKS_FILE="data/raw/malmo_links_${RUN_DATE}.parquet"
+          DETAILS_DIR="data/processed/property_details/gha_runs/weekly_${RUN_DATE}"
+
+          if [ -f "$LINKS_FILE" ]; then
+            az storage blob upload \
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+              --container-name "$BLOB_CONTAINER" \
+              --name "$BLOB_PREFIX/$BLOB_RAW_PREFIX/malmo_links/run_date=$RUN_DATE_PARTITION/$(basename "$LINKS_FILE")" \
+              --file "$LINKS_FILE" \
+              --overwrite true \
+              --auth-mode login
+          fi
+
+          if [ -d "$DETAILS_DIR" ]; then
+            az storage blob upload-batch \
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+              --destination "$BLOB_CONTAINER" \
+              --destination-path "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/property_details_legacy/run_date=$RUN_DATE_PARTITION" \
+              --source "$DETAILS_DIR" \
+              --overwrite true \
+              --auth-mode login
+          fi
+
+      - name: Blob export skipped notice
+        if: always() && !(env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != '')
+        run: |
+          echo "Blob export skipped. Ensure BLOB_WRITE_ENABLED=true, AZURE_STORAGE_ACCOUNT_NAME, BLOB_CONTAINER, and OIDC secrets are configured."
       
       - name: Upload scraping logs as artifact
         if: always()
