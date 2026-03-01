@@ -130,6 +130,12 @@ jobs:
           DISPLAY: ${{ env.DISPLAY }}
         run: |
           source .venv/bin/activate
+          RUN_DATE="$(date -u +%Y%m%d)"
+          BATCH_DIR="data/processed/active_listings/batches_${RUN_DATE}"
+          if [ -d "$BATCH_DIR" ]; then
+            echo "Clearing existing batch directory for rerun safety: $BATCH_DIR"
+            rm -rf "$BATCH_DIR"
+          fi
           PREDICT_FLAG=""
           if [ "$INPUT_PREDICT" = "true" ]; then
             PREDICT_FLAG="--predict"
