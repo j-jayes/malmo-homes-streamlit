@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.9.0",
     "pyyaml>=6.0.1",
     "python-dotenv>=1.0.0",
+    "shap>=0.49.1",
 ]
 
 [project.optional-dependencies]
@@ -173,4 +174,13 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
+]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.7",
+    "nbconvert>=7.16.6",
+    "scipy>=1.17.1",
+    "seaborn>=0.13.2",
 ]

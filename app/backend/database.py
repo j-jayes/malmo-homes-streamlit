@@ -298,6 +298,200 @@ def get_stats():
     }
 
 
+def get_explanation(property_id: str) -> dict | None:
+    """Retrieve pre-computed SHAP explanation and narrative for a property."""
+    import json
+
+    conn = get_db_connection()
+    tables = [r[0] for r in conn.execute("SHOW TABLES").fetchall()]
+    if "active_explanations" not in tables:
+        conn.close()
+        return None
+
+    has_predictions = "active_predictions" in tables
+    has_listings = "active_listings" in tables
+
+    if has_predictions and has_listings:
+        query = """
+            SELECT
+                ae.property_id,
+                ae.narrative,
+                ae.shap_json,
+                ae.text_premium,
+                ae.word_impacts_json,
+                ap.predicted_price,
+                al.asking_price,
+                ap.price_diff_pct
+            FROM active_explanations ae
+            LEFT JOIN active_predictions ap ON ae.property_id = ap.property_id
+            LEFT JOIN active_listings al ON ae.property_id = al.property_id
+            WHERE ae.property_id = ?
+        """
+    else:
+        query = """
+            SELECT
+                ae.property_id,
+                ae.narrative,
+                ae.shap_json,
+                ae.text_premium,
+                ae.word_impacts_json,
+                NULL AS predicted_price,
+                NULL AS asking_price,
+                NULL AS price_diff_pct
+            FROM active_explanations ae
+            WHERE ae.property_id = ?
+        """
+
+    result = conn.execute(query, [property_id])
+    rows = _rows_to_dicts(result)
+    conn.close()
+
+    if not rows:
+        return None
+
+    row = rows[0]
+
+    shap_features = []
+    if row.get("shap_json"):
+        try:
+            shap_features = json.loads(row["shap_json"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    word_impacts = []
+    if row.get("word_impacts_json"):
+        try:
+            word_impacts = json.loads(row["word_impacts_json"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return {
+        "property_id": row["property_id"],
+        "narrative": row.get("narrative") or "",
+        "predicted_price": row.get("predicted_price"),
+        "asking_price": row.get("asking_price"),
+        "price_diff_pct": row.get("price_diff_pct"),
+        "shap_features": shap_features,
+        "text_premium": row.get("text_premium"),
+        "word_impacts": word_impacts,
+    }
+
+
+def get_neighborhood_stats() -> list[dict]:
+    """Neighbourhood median price/m² and days-on-market, qualifying >= 10 sales."""
+    conn = get_db_connection()
+    result = conn.execute("""
+        SELECT
+            neighborhood,
+            MEDIAN(final_price / living_area) AS median_price_per_sqm,
+            MEDIAN(final_price)               AS median_price,
+            COUNT(*)                          AS count,
+            MEDIAN(days_on_market)            AS avg_days_on_market
+        FROM properties
+        WHERE neighborhood IS NOT NULL
+          AND living_area > 0
+          AND final_price > 0
+        GROUP BY neighborhood
+        HAVING COUNT(*) >= 10
+        ORDER BY median_price_per_sqm DESC
+    """)
+    rows = _rows_to_dicts(result)
+    conn.close()
+    return rows
+
+
+def get_room_stats() -> list[dict]:
+    """Median price and price/m² grouped by room count (1–6)."""
+    conn = get_db_connection()
+    result = conn.execute("""
+        SELECT
+            CAST(rooms AS INT) AS rooms,
+            MEDIAN(final_price)               AS median_price,
+            MEDIAN(final_price / living_area) AS median_price_per_sqm,
+            MEDIAN(living_area)               AS avg_area,
+            COUNT(*) AS count
+        FROM properties
+        WHERE rooms BETWEEN 1 AND 6
+          AND final_price > 0
+          AND living_area > 0
+          AND rooms IS NOT NULL
+        GROUP BY CAST(rooms AS INT)
+        ORDER BY rooms
+    """)
+    rows = _rows_to_dicts(result)
+    conn.close()
+    return rows
+
+
+def get_price_trend() -> list[dict]:
+    """Monthly median price over the last 24 months."""
+    conn = get_db_connection()
+    result = conn.execute("""
+        SELECT
+            LEFT(sold_date, 7)   AS month,
+            MEDIAN(final_price)  AS median_price,
+            COUNT(*)             AS count
+        FROM properties
+        WHERE sold_date IS NOT NULL
+          AND sold_date >= '2024-01-01'
+          AND final_price > 0
+        GROUP BY LEFT(sold_date, 7)
+        ORDER BY month
+    """)
+    rows = _rows_to_dicts(result)
+    conn.close()
+    return rows
+
+
+def get_building_decade_stats() -> list[dict]:
+    """Median price/m² grouped by building decade."""
+    conn = get_db_connection()
+    result = conn.execute("""
+        SELECT
+            CONCAT(CAST((CAST(building_year AS INT) / 10) * 10 AS VARCHAR), 's') AS decade,
+            (CAST(building_year AS INT) / 10) * 10                               AS decade_start,
+            MEDIAN(final_price / living_area)                                     AS median_price_per_sqm,
+            COUNT(*) AS count
+        FROM properties
+        WHERE building_year IS NOT NULL
+          AND CAST(building_year AS INT) BETWEEN 1900 AND 2024
+          AND living_area > 0
+          AND final_price > 0
+        GROUP BY decade, decade_start
+        HAVING COUNT(*) >= 5
+        ORDER BY decade_start
+    """)
+    rows = _rows_to_dicts(result)
+    conn.close()
+    return rows
+
+
+def get_fee_analysis() -> list[dict]:
+    """Median price bucketed by fee, split into small (<60m²) vs large (≥80m²) apartments."""
+    conn = get_db_connection()
+    result = conn.execute("""
+        SELECT
+            ROUND(association_fee / 500.0) * 500          AS fee_bucket,
+            MEDIAN(final_price)                            AS price,
+            CASE
+                WHEN living_area < 60 THEN 'Small (<60m²)'
+                ELSE 'Large (≥80m²)'
+            END                                            AS area_group,
+            COUNT(*) AS count
+        FROM properties
+        WHERE association_fee > 0
+          AND association_fee <= 8000
+          AND final_price > 0
+          AND (living_area < 60 OR living_area >= 80)
+        GROUP BY fee_bucket, area_group
+        HAVING COUNT(*) >= 3
+        ORDER BY area_group, fee_bucket
+    """)
+    rows = _rows_to_dicts(result)
+    conn.close()
+    return rows
+
+
 def get_nlp_training_data(limit: int = 5000):
     """Retrieve text descriptions paired with final sale prices for NLP modeling."""
     conn = get_db_connection()

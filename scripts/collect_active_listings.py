@@ -10,13 +10,13 @@ Designed to run both locally and inside GitHub Actions.
 Usage::
 
     # Quick local test (5 links, 1 page)
-    python scripts/scrape_active_listings.py --max-pages 1 --max-records 5
+    python scripts/collect_active_listings.py --max-pages 1 --max-records 5
 
     # Full run with predictions
-    python scripts/scrape_active_listings.py --predict
+    python scripts/collect_active_listings.py --predict
 
     # CI mode (longer delays, git commits)
-    python scripts/scrape_active_listings.py --predict --git-commit-interval 20
+    python scripts/collect_active_listings.py --predict --git-commit-interval 20
 """
 
 from __future__ import annotations

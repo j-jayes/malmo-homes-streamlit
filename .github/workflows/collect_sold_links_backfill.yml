@@ -1,0 +1,335 @@
+name: Collect Sold Property Links (Historical Backfill)
+
+# Runs one calendar month at a time through the specified range, using
+# month + area-band partitioning to stay under Hemnet's 2,500-result limit.
+# Each completed month is committed independently so the workflow can be
+# resumed after a timeout by re-triggering with the same inputs.
+#
+# Strategy:
+#   For each month M in [start_month, end_month]:
+#     Run collect_sold_links.py --sold-min YYYY-MM-01 --sold-max NEXT-MM-01
+#     Output dir: data/raw/area_ranges_national/YYYYMM/
+#     Consolidate into data/raw/sold_properties_all_areas.csv
+#     Commit + push
+#
+# This ensures month × area partitioning — mathematically guaranteed to
+# stay under 2,400 results per query even at national scope.
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_month:
+        description: 'First month to backfill (YYYY-MM)'
+        required: true
+        type: string
+        default: '2020-01'
+      end_month:
+        description: 'Last month to backfill (YYYY-MM, inclusive)'
+        required: true
+        type: string
+        default: '2025-12'
+      location_id:
+        description: 'Hemnet location ID (leave blank for all Sweden)'
+        required: false
+        type: string
+        default: ''
+      initial_step:
+        description: 'Initial area step size in m² (default 50)'
+        required: false
+        type: number
+        default: 50
+      max_pages:
+        description: 'Max search-result pages per area range (Hemnet max 50)'
+        required: false
+        type: number
+        default: 50
+      test_mode:
+        description: 'Test mode: scrape only 1 month, 2 pages, 80-85m²'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: collect-sold-links-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # 5h 50m — handles roughly 20-25 months per run
+    env:
+      HEMNET_SOLD_MIN_DELAY_SECONDS: 4
+      HEMNET_SOLD_MAX_DELAY_SECONDS: 8
+      BLOB_WRITE_ENABLED: ${{ vars.BLOB_WRITE_ENABLED || 'false' }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME || '' }}
+      BLOB_CONTAINER: ${{ vars.BLOB_CONTAINER || '' }}
+      BLOB_PREFIX: ${{ vars.BLOB_PREFIX || 'sweden-housing' }}
+      BLOB_PROCESSED_PREFIX: ${{ vars.BLOB_PROCESSED_PREFIX || 'processed' }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      INPUT_START_MONTH: ${{ inputs.start_month }}
+      INPUT_END_MONTH: ${{ inputs.end_month }}
+      INPUT_LOCATION_ID: ${{ inputs.location_id || '' }}
+      INPUT_INITIAL_STEP: ${{ inputs.initial_step || 50 }}
+      INPUT_MAX_PAGES: ${{ inputs.max_pages || 50 }}
+      INPUT_TEST_MODE: ${{ inputs.test_mode || false }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e ".[scraping]"
+
+      - name: Install Playwright
+        run: |
+          source .venv/bin/activate
+          playwright install chromium --with-deps
+
+      - name: Start virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Generate month sequence
+        id: months
+        run: |
+          python - <<'PY'
+          import json, os, sys
+
+          start = os.environ["INPUT_START_MONTH"]   # YYYY-MM
+          end   = os.environ["INPUT_END_MONTH"]     # YYYY-MM
+          test  = os.environ["INPUT_TEST_MODE"].lower() == "true"
+
+          sy, sm = map(int, start.split("-"))
+          ey, em = map(int, end.split("-"))
+
+          months = []
+          y, m = sy, sm
+          while (y, m) <= (ey, em):
+              sold_min = f"{y:04d}-{m:02d}-01"
+              # Exclusive upper bound = first day of next month
+              nm, ny = (m + 1, y) if m < 12 else (1, y + 1)
+              sold_max = f"{ny:04d}-{nm:02d}-01"
+              key = f"{y:04d}{m:02d}"
+              months.append({"key": key, "sold_min": sold_min, "sold_max": sold_max})
+              m += 1
+              if m > 12:
+                  m = 1
+                  y += 1
+
+          if test and months:
+              months = months[:1]   # one month only in test mode
+
+          # Write to a file so bash can iterate (avoids env-var size limits)
+          with open("month_sequence.json", "w") as f:
+              json.dump(months, f)
+
+          print(f"Generated {len(months)} months to process")
+          for entry in months[:3]:
+              print(f"  {entry['key']}: {entry['sold_min']} → {entry['sold_max']}")
+          if len(months) > 3:
+              print(f"  … and {len(months)-3} more")
+          PY
+
+      - name: Run backfill month by month
+        env:
+          DISPLAY: ${{ env.DISPLAY }}
+          CI: "true"
+        run: |
+          source .venv/bin/activate
+
+          LOCATION_FLAG=""
+          if [ -n "$INPUT_LOCATION_ID" ]; then
+            LOCATION_FLAG="--location-id $INPUT_LOCATION_ID"
+          fi
+
+          STEP_FLAG="--initial-step $INPUT_INITIAL_STEP"
+          PAGES_FLAG="--max-pages $INPUT_MAX_PAGES"
+
+          if [ "$INPUT_TEST_MODE" = "true" ]; then
+            STEP_FLAG="--initial-step 50"
+            PAGES_FLAG="--max-pages 2"
+            AREA_FLAGS="--min-area 80 --max-area 85"
+          else
+            AREA_FLAGS="--min-area 0 --max-area 500"
+          fi
+
+          python - <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+
+          months = json.loads(Path("month_sequence.json").read_text())
+          venv_python = ".venv/bin/python"
+          location_flag = os.environ.get("INPUT_LOCATION_ID", "")
+          step_flag = os.environ.get("INPUT_INITIAL_STEP", "50")
+          pages_flag = os.environ.get("INPUT_MAX_PAGES", "50")
+          test_mode = os.environ.get("INPUT_TEST_MODE", "false").lower() == "true"
+
+          for entry in months:
+              key      = entry["key"]        # e.g. "202403"
+              sold_min = entry["sold_min"]   # e.g. "2024-03-01"
+              sold_max = entry["sold_max"]   # e.g. "2024-04-01"
+              out_dir  = f"data/raw/area_ranges_national/{key}"
+              master   = "data/raw/sold_properties_all_areas.csv"
+
+              print(f"\n{'='*70}")
+              print(f"MONTH {key}: {sold_min} → {sold_max}")
+              print(f"{'='*70}")
+
+              # Skip if already done (progress.json exists with completed ranges)
+              progress_file = Path(out_dir) / "progress.json"
+              if progress_file.exists():
+                  import json as _json
+                  try:
+                      prog = _json.loads(progress_file.read_text())
+                      done = len(prog.get("completed_ranges", []))
+                      if done > 0:
+                          print(f"  Already has {done} completed ranges — skipping scrape (reusing)")
+                  except Exception:
+                      pass
+
+              cmd = [
+                  venv_python, "scripts/collect_sold_links.py",
+                  "--sold-min", sold_min,
+                  "--sold-max", sold_max,
+                  "--output-dir", out_dir,
+                  "--initial-step", step_flag,
+                  "--max-pages", pages_flag,
+                  "--headless",
+              ]
+              if test_mode:
+                  cmd += ["--min-area", "80", "--max-area", "85"]
+
+              if location_flag:
+                  cmd += ["--location-id", location_flag]
+
+              print(f"Running: {' '.join(cmd)}")
+              result = subprocess.run(cmd)
+
+              if result.returncode != 0:
+                  print(f"  WARNING: scraper exited {result.returncode} — committing partial and continuing")
+
+              # Consolidate this month's output into master CSV
+              consolidate_cmd = [
+                  venv_python, "scripts/collect_sold_links.py",
+                  "--consolidate-only",
+                  "--output-dir", out_dir,
+              ]
+              subprocess.run(consolidate_cmd, check=False)
+
+              # Commit after each month (enables resume on timeout)
+              subprocess.run(["git", "add",
+                  f"data/raw/area_ranges_national/{key}/",
+                  "data/raw/sold_properties_all_areas.csv",
+                  "data/.hemnet_session.json",
+              ], check=False)
+              diff = subprocess.run(["git", "diff", "--staged", "--quiet"])
+              if diff.returncode != 0:
+                  subprocess.run(["git", "commit", "-m",
+                      f"data: backfill sold links for {key} ({sold_min}–{sold_max})"],
+                      check=True)
+                  subprocess.run(["git", "push"], check=True)
+                  print(f"  Committed month {key}")
+              else:
+                  print(f"  No new data for {key}")
+
+          print("\nBackfill loop complete.")
+          PY
+
+      - name: Final check
+        if: always()
+        run: |
+          if [ -f "data/raw/sold_properties_all_areas.csv" ]; then
+            TOTAL=$(tail -n +2 data/raw/sold_properties_all_areas.csv | wc -l)
+            echo "Total unique property links in master CSV: $TOTAL"
+          fi
+          if [ -d "data/raw/area_ranges_national" ]; then
+            MONTHS=$(ls -d data/raw/area_ranges_national/*/ 2>/dev/null | wc -l)
+            echo "Month directories scraped: $MONTHS"
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backfill-sold-links-${{ github.run_id }}
+          path: |
+            data/raw/area_ranges_national/
+            data/raw/sold_properties_all_areas.csv
+          retention-days: 30
+
+      - name: Azure login (OIDC)
+        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload to Azure Blob
+        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
+        run: |
+          set -euo pipefail
+          RUN_DATE="$(date -u +%Y-%m-%d)"
+          if [ -d "data/raw/area_ranges_national" ]; then
+            az storage blob upload-batch \
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+              --destination "$BLOB_CONTAINER" \
+              --destination-path "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/sold_links/backfill/run_date=$RUN_DATE" \
+              --source "data/raw/area_ranges_national" \
+              --overwrite true --auth-mode login
+          fi
+          if [ -f "data/raw/sold_properties_all_areas.csv" ]; then
+            az storage blob upload \
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+              --container-name "$BLOB_CONTAINER" \
+              --name "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/sold_links/sold_properties_all_areas.csv" \
+              --file "data/raw/sold_properties_all_areas.csv" \
+              --overwrite true --auth-mode login
+          fi
+
+      - name: Blob export skipped notice
+        if: always() && !(env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != '')
+        run: echo "Blob export skipped — configure BLOB_WRITE_ENABLED and Azure secrets to enable."
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Backfill sold links failed (${context.runId})`,
+              body: `The historical sold-links backfill failed.\n\nCheck the [run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).\n\n**Resume:** re-trigger with the same start/end months — completed months are skipped automatically via per-month progress.json files.\n\nLabels: backfill, scraping`,
+              labels: ['automation', 'scraping', 'bug']
+            })

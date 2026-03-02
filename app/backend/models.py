@@ -93,3 +93,69 @@ class PredictionResponse(BaseModel):
     confidence_low: int
     confidence_high: int
     predicted_price_per_sqm: Optional[int] = None
+
+
+class ShapFeature(BaseModel):
+    """A single SHAP feature attribution."""
+    feature: str
+    display_name: str
+    value: float
+    shap_value: float
+
+
+class WordImpact(BaseModel):
+    """A single word's price impact from the text pipeline."""
+    word: str
+    impact: float
+    coefficient: float
+    tfidf_score: float
+
+
+class ExplanationResponse(BaseModel):
+    """Full explainability response for a property listing."""
+    property_id: str
+    narrative: str
+    predicted_price: Optional[int] = None
+    asking_price: Optional[float] = None
+    price_diff_pct: Optional[float] = None
+    shap_features: list[ShapFeature] = []
+    text_premium: Optional[float] = None
+    word_impacts: list[WordImpact] = []
+
+
+# ── Insights aggregates ────────────────────────────────────────────────────────
+
+class NeighborhoodStat(BaseModel):
+    neighborhood: str
+    median_price_per_sqm: float
+    median_price: float
+    count: int
+    avg_days_on_market: Optional[float] = None
+
+
+class RoomStat(BaseModel):
+    rooms: int
+    median_price: float
+    median_price_per_sqm: float
+    count: int
+    avg_area: float
+
+
+class PriceTrendPoint(BaseModel):
+    month: str          # "2024-01"
+    median_price: float
+    count: int
+
+
+class BuildingDecadeStat(BaseModel):
+    decade: str         # "1960s"
+    decade_start: int
+    median_price_per_sqm: float
+    count: int
+
+
+class FeeAnalysisPoint(BaseModel):
+    fee_bucket: float
+    price: float
+    area_group: str     # "Small (<60m²)" | "Large (≥80m²)"
+    count: int

@@ -1,52 +1,57 @@
-name: Property Detail Scraper
+name: Collect Property Details (Scheduled)
+
+# Runs twice daily to scrape full property details for URLs collected by
+# the sold-link workflows. Reads from sold_properties_all_areas.csv and
+# tracks progress via a SHA-256 fingerprint cache so URLs are never
+# re-scraped across runs.
+#
+# Pipeline position:
+#   collect_sold_links_weekly  →  [this workflow]  →  DuckDB properties table
+#   collect_sold_links_backfill →  [this workflow]
 
 on:
   workflow_dispatch:
     inputs:
       source_csv:
-        description: "CSV file with property URLs (aggregated dataset with ~56K URLs)"
+        description: 'CSV file with property URLs'
         required: false
         default: data/raw/sold_properties_all_areas.csv
         type: string
       max_records:
-        description: "Maximum records to scrape (0 = all unprocessed URLs, skipping cached)"
+        description: 'Max records to scrape (0 = all unprocessed)'
         required: false
         default: 0
         type: number
       offset:
-        description: "Number of rows to skip before scraping"
+        description: 'Skip N rows before scraping'
         required: false
         default: 0
         type: number
       batch_size:
-        description: "Properties per batch"
+        description: 'Properties per batch'
         required: false
         default: 5
         type: number
       headless:
-        description: "Run browser in headless mode"
+        description: 'Run browser headlessly'
         required: false
         default: true
         type: boolean
       log_level:
-        description: "Log level for CLI"
+        description: 'Log level'
         required: false
         default: INFO
         type: choice
-        options:
-          - DEBUG
-          - INFO
-          - WARNING
+        options: [DEBUG, INFO, WARNING]
   schedule:
-    # Offset by 30 minutes from link scraping cadence
-    - cron: '30 0,12 * * *'
+    - cron: '30 0,12 * * *'  # 00:30 and 12:30 UTC daily
 
 permissions:
   contents: write
   id-token: write
 
 concurrency:
-  group: property-detail-runner
+  group: collect-property-details
   cancel-in-progress: false
 
 jobs:
@@ -67,17 +72,17 @@ jobs:
       INPUT_LOG_LEVEL: ${{ inputs.log_level || 'INFO' }}
       HEMNET_DETAIL_MIN_DELAY_SECONDS: 4
       HEMNET_DETAIL_MAX_DELAY_SECONDS: 8
-      PROPERTY_DETAIL_COMMIT_INTERVAL: 20 # Commit every 20 batches (100 properties with batch_size=5)
+      PROPERTY_DETAIL_COMMIT_INTERVAL: 20
       PROGRESS_CACHE: data/processed/property_details/progress_cache.json
       BLOB_WRITE_ENABLED: ${{ vars.BLOB_WRITE_ENABLED || 'false' }}
       AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME || '' }}
       BLOB_CONTAINER: ${{ vars.BLOB_CONTAINER || '' }}
       BLOB_PREFIX: ${{ vars.BLOB_PREFIX || 'sweden-housing' }}
       BLOB_PROCESSED_PREFIX: ${{ vars.BLOB_PROCESSED_PREFIX || 'processed' }}
-      BLOB_MODELS_PREFIX: models
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -94,22 +99,21 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Install project dependencies
+      - name: Install dependencies
         run: |
           uv venv
           source .venv/bin/activate
           uv pip install -e ".[scraping,data]"
 
-      - name: Install Playwright browsers
+      - name: Install Playwright
         run: |
           source .venv/bin/activate
           playwright install chromium --with-deps
 
-      - name: Start virtual display (Xvfb)
+      - name: Start virtual display
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
-          export DISPLAY=:99
           Xvfb :99 -screen 0 1920x1080x24 > /tmp/xvfb.log 2>&1 &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
 
@@ -124,28 +128,22 @@ jobs:
           set -euo pipefail
           mkdir -p "$(dirname "$SUBSET_CSV")"
           mkdir -p "$PROCESSED_ROOT"
-          if [ -z "$RUN_TIMESTAMP" ]; then
-            echo "RUN_TIMESTAMP missing"
-            exit 1
-          fi
           run_dir="$PROCESSED_ROOT/$RUN_TIMESTAMP"
           if [ -d "$run_dir" ]; then
             idx=1
-            while [ -d "${run_dir}-retry${idx}" ]; do
-              idx=$((idx+1))
-            done
+            while [ -d "${run_dir}-retry${idx}" ]; do idx=$((idx+1)); done
             run_dir="${run_dir}-retry${idx}"
           fi
           mkdir -p "$run_dir"
           echo "RUN_DIR=$run_dir" >> "$GITHUB_ENV"
           echo "SCRAPE_OUTPUT=$run_dir" >> "$GITHUB_ENV"
 
-      - name: Configure git identity
+      - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Run batch scraper
+      - name: Scrape property details
         id: scrape
         env:
           DISPLAY: ${{ env.DISPLAY }}
@@ -153,9 +151,7 @@ jobs:
           source .venv/bin/activate
           HEADLESS_FLAG="$INPUT_HEADLESS"
           EXTRA_FLAGS=""
-          if [ "$HEADLESS_FLAG" = 'false' ]; then
-            EXTRA_FLAGS="--show-browser"
-          fi
+          if [ "$HEADLESS_FLAG" = 'false' ]; then EXTRA_FLAGS="--show-browser"; fi
           python -m src.scrapers.batch_manager_cli \
             --input "$INPUT_SOURCE_CSV" \
             --output-dir "$SCRAPE_OUTPUT" \
@@ -168,95 +164,65 @@ jobs:
             --progress-cache "$PROGRESS_CACHE" \
             $EXTRA_FLAGS
 
-      - name: Summarize results
+      - name: Summarise results
         if: always()
         id: summary
         run: |
           source .venv/bin/activate
           python - <<'PY'
-          import json
-          import os
-          import pathlib
-          import sys
+          import json, os, pathlib, sys
 
           metadata_path = pathlib.Path(os.environ["SCRAPE_OUTPUT"]) / "metadata.json"
-          subset_path = pathlib.Path(os.environ["SUBSET_CSV"]).resolve()
-          progress_cache_path = pathlib.Path(os.environ["PROGRESS_CACHE"]).resolve()
+          progress_cache_path = pathlib.Path(os.environ["PROGRESS_CACHE"])
 
-          summary_lines = ["## Property detail scrape"]
-          
-          # Show progress cache stats
+          lines = ["## Property Detail Scrape"]
           if progress_cache_path.exists():
               try:
-                  cache_data = json.loads(progress_cache_path.read_text())
-                  cache_count = len(cache_data.get("identifiers", []))
-                  summary_lines.append(f"- **Progress cache**: {cache_count} URLs already scraped")
+                  cache = json.loads(progress_cache_path.read_text())
+                  lines.append(f"- **Progress cache**: {len(cache.get('identifiers', []))} URLs already scraped")
               except Exception:
-                  summary_lines.append("- Progress cache error: could not read cache file")
-          else:
-              summary_lines.append("- Progress cache: not found (starting fresh)")
+                  lines.append("- Progress cache: could not read")
 
           if not metadata_path.exists():
-              summary_lines.append("- ⚠️ No metadata found (no new URLs to scrape)")
-              print("\n".join(summary_lines), file=sys.stderr)
-              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
-                  fh.write("\n".join(summary_lines) + "\n")
+              lines.append("- No new URLs processed this run")
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+                  fh.write("\n".join(lines) + "\n")
               sys.exit(0)
 
-          metadata = json.loads(metadata_path.read_text())
-          summary_lines.extend([
-              f"- Source CSV: `{os.environ['INPUT_SOURCE_CSV']}`",
-              f"- Offset: {os.environ['INPUT_OFFSET']}",
-              f"- Max records: {os.environ['INPUT_MAX_RECORDS']} (0 = all unprocessed)",
-              f"- **Processed this run**: {metadata.get('total_processed', 0)}",
-              f"- **Successful**: {metadata.get('total_successful', 0)}",
-              f"- **Failed**: {metadata.get('total_failed', 0)}",
-              f"- Output dir: `{metadata_path.parent}`",
-          ])
-          print("\n".join(summary_lines))
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
-              fh.write("\n".join(summary_lines) + "\n")
+          meta = json.loads(metadata_path.read_text())
+          lines += [
+              f"- Source: `{os.environ['INPUT_SOURCE_CSV']}`",
+              f"- Processed: {meta.get('total_processed', 0)}",
+              f"- Successful: {meta.get('total_successful', 0)}",
+              f"- Failed: {meta.get('total_failed', 0)}",
+          ]
+          print("\n".join(lines))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write("\n".join(lines) + "\n")
           PY
 
-      - name: Record run outputs
-        if: ${{ success() }}
+      - name: Record run to index
+        if: success()
         env:
           RUN_TIMESTAMP: ${{ steps.run_timestamp.outputs.utc }}
         run: |
           set -euo pipefail
           source .venv/bin/activate
-          if [ -z "${RUN_DIR:-}" ]; then
-            echo "RUN_DIR not exported; aborting."
-            exit 1
-          fi
-          metadata_path="$RUN_DIR/metadata.json"
-          if [ ! -f "$metadata_path" ]; then
-            echo "No metadata generated; skipping persistence."
-            exit 0
-          fi
+          if [ ! -f "$RUN_DIR/metadata.json" ]; then exit 0; fi
           python - <<'PY'
-          import json
-          import os
-          import pathlib
+          import json, os, pathlib
 
           run_dir = pathlib.Path(os.environ["RUN_DIR"])
-          metadata_path = run_dir / "metadata.json"
-          if not metadata_path.exists():
-              raise SystemExit("Persisted metadata missing; cannot update index.")
-
-          metadata = json.loads(metadata_path.read_text())
+          meta = json.loads((run_dir / "metadata.json").read_text())
           index_path = pathlib.Path(os.environ["RUN_INDEX"])
           index_path.parent.mkdir(parents=True, exist_ok=True)
-          
-          # Get progress cache count
-          progress_cache_path = pathlib.Path(os.environ["PROGRESS_CACHE"])
+
+          progress_cache = pathlib.Path(os.environ["PROGRESS_CACHE"])
           total_scraped = 0
-          if progress_cache_path.exists():
+          if progress_cache.exists():
               try:
-                  cache_data = json.loads(progress_cache_path.read_text())
-                  total_scraped = len(cache_data.get("identifiers", []))
+                  total_scraped = len(json.loads(progress_cache.read_text()).get("identifiers", []))
               except Exception:
-                  # Cache file may be corrupted or malformed; ignore and use 0
                   pass
 
           record = {
@@ -266,25 +232,23 @@ jobs:
               "offset": int(float(os.environ["INPUT_OFFSET"])),
               "max_records": int(float(os.environ["INPUT_MAX_RECORDS"])),
               "batch_size": int(float(os.environ["INPUT_BATCH_SIZE"])),
-              "processed": metadata.get("total_processed", 0),
-              "successful": metadata.get("total_successful", 0),
-              "failed": metadata.get("total_failed", 0),
+              "processed": meta.get("total_processed", 0),
+              "successful": meta.get("total_successful", 0),
+              "failed": meta.get("total_failed", 0),
               "total_scraped_to_date": total_scraped,
               "output_path": str(run_dir),
-              "artifact_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }
-
-          with index_path.open("a", encoding="utf-8") as fh:
+          with index_path.open("a") as fh:
               fh.write(json.dumps(record) + "\n")
           PY
 
       - name: Update DuckDB database
-        if: ${{ success() }}
+        if: success()
         run: |
           source .venv/bin/activate
           python src/data/aggregate_properties.py
-          
-      - name: Match active listings descriptions to sold properties
+
+      - name: Match active listing descriptions to sold properties
         run: |
           source .venv/bin/activate
           python scripts/match_active_to_sold.py
@@ -293,13 +257,11 @@ jobs:
         if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "data: property details ${RUN_TIMESTAMP} (${INPUT_SOURCE_CSV} offset=${INPUT_OFFSET})"
+          commit_message: "data: property details ${{ steps.run_timestamp.outputs.utc }}"
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
           file_pattern: 'data/processed/property_details/**'
           commit_options: '--no-verify'
-          skip_fetch: false
-          skip_checkout: false
 
       - name: Azure login (OIDC)
         if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
@@ -309,54 +271,35 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Upload property detail outputs to Azure Blob (OIDC)
+      - name: Upload to Azure Blob
         if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
         run: |
           set -euo pipefail
-          RUN_DATE_PARTITION="$(date -u +%Y-%m-%d)"
-
+          RUN_DATE="$(date -u +%Y-%m-%d)"
           if [ -d "$SCRAPE_OUTPUT" ]; then
             az storage blob upload-batch \
               --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
               --destination "$BLOB_CONTAINER" \
-              --destination-path "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/property_details/run_date=$RUN_DATE_PARTITION/run_id=${GITHUB_RUN_ID}" \
-              --source "$SCRAPE_OUTPUT" \
-              --overwrite true \
-              --auth-mode login
-          else
-            echo "No SCRAPE_OUTPUT directory found; skipping run output upload"
+              --destination-path "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/property_details/run_date=$RUN_DATE/run_id=$GITHUB_RUN_ID" \
+              --source "$SCRAPE_OUTPUT" --overwrite true --auth-mode login
           fi
-
-          if [ -f "$RUN_INDEX" ]; then
-            az storage blob upload \
+          for f in "$RUN_INDEX" "$PROGRESS_CACHE"; do
+            [ -f "$f" ] && az storage blob upload \
               --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
               --container-name "$BLOB_CONTAINER" \
-              --name "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/property_details/index/index.jsonl" \
-              --file "$RUN_INDEX" \
-              --overwrite true \
-              --auth-mode login
-          fi
-
-          if [ -f "$PROGRESS_CACHE" ]; then
-            az storage blob upload \
-              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
-              --container-name "$BLOB_CONTAINER" \
-              --name "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/property_details/progress/progress_cache.json" \
-              --file "$PROGRESS_CACHE" \
-              --overwrite true \
-              --auth-mode login
-          fi
+              --name "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/property_details/$(basename $f)" \
+              --file "$f" --overwrite true --auth-mode login
+          done
 
       - name: Blob export skipped notice
         if: always() && !(env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != '')
-        run: |
-          echo "Blob export skipped. Ensure BLOB_WRITE_ENABLED=true, AZURE_STORAGE_ACCOUNT_NAME, BLOB_CONTAINER, and OIDC secrets are configured."
+        run: echo "Blob export skipped — configure BLOB_WRITE_ENABLED and Azure secrets to enable."
 
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: property-detail-output-${{ github.run_id }}
+          name: property-details-${{ github.run_id }}
           path: |
             ${{ env.SCRAPE_OUTPUT }}/**
             ${{ env.SUBSET_CSV }}

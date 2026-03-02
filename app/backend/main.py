@@ -8,6 +8,12 @@ from app.backend.models import (
     ActiveListing,
     PredictionRequest,
     PredictionResponse,
+    ExplanationResponse,
+    NeighborhoodStat,
+    RoomStat,
+    PriceTrendPoint,
+    BuildingDecadeStat,
+    FeeAnalysisPoint,
 )
 
 app = FastAPI(title="Malmo Homes API")
@@ -119,6 +125,19 @@ async def get_active_listings_endpoint(
     )
 
 
+@app.get("/active/{property_id}/explanation", response_model=ExplanationResponse)
+async def get_explanation_endpoint(property_id: str):
+    """Pre-computed SHAP explanation and narrative for an active listing."""
+    from fastapi import HTTPException
+
+    from app.backend.database import get_explanation
+
+    result = get_explanation(property_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Explanation not found for this property")
+    return result
+
+
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_price(request: PredictionRequest):
     from fastapi import HTTPException
@@ -147,3 +166,40 @@ async def predict_price(request: PredictionRequest):
         confidence_high=prediction.confidence_high,
         predicted_price_per_sqm=prediction.predicted_price_per_sqm,
     )
+
+
+# ── Insights endpoints ─────────────────────────────────────────────────────────
+
+@app.get("/insights/neighborhoods", response_model=list[NeighborhoodStat])
+async def insights_neighborhoods():
+    """Neighbourhood ranking by median price/m² with days-on-market."""
+    from app.backend.database import get_neighborhood_stats
+    return get_neighborhood_stats()
+
+
+@app.get("/insights/rooms", response_model=list[RoomStat])
+async def insights_rooms():
+    """Median price and price/m² by room count (1–6)."""
+    from app.backend.database import get_room_stats
+    return get_room_stats()
+
+
+@app.get("/insights/price-trend", response_model=list[PriceTrendPoint])
+async def insights_price_trend():
+    """Monthly median sale price over the last 24 months."""
+    from app.backend.database import get_price_trend
+    return get_price_trend()
+
+
+@app.get("/insights/building-years", response_model=list[BuildingDecadeStat])
+async def insights_building_years():
+    """Median price/m² grouped by building decade."""
+    from app.backend.database import get_building_decade_stats
+    return get_building_decade_stats()
+
+
+@app.get("/insights/fee-analysis", response_model=list[FeeAnalysisPoint])
+async def insights_fee_analysis():
+    """Fee vs price for small (<60m²) and large (≥80m²) apartments."""
+    from app.backend.database import get_fee_analysis
+    return get_fee_analysis()

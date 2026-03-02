@@ -7,76 +7,90 @@ interface BestDealsProps {
 
 function formatSEK(val: number | undefined): string {
     if (val === undefined || val === null) return '—';
-    return val.toLocaleString('sv-SE') + ' kr';
+    if (val >= 1_000_000) return (val / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+    return Math.round(val / 1_000) + 'k';
+}
+
+function dealColor(pct: number | undefined | null) {
+    if (pct === undefined || pct === null) return { bar: 'bg-slate-200', badge: 'bg-slate-100 text-slate-500', text: pct };
+    if (pct <= -10) return { bar: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', text: pct };
+    if (pct <= -5)  return { bar: 'bg-green-400',   badge: 'bg-green-50 text-green-700 border border-green-200',   text: pct };
+    if (pct >= 10)  return { bar: 'bg-red-400',     badge: 'bg-red-50 text-red-600 border border-red-200',         text: pct };
+    if (pct >= 5)   return { bar: 'bg-amber-400',   badge: 'bg-amber-50 text-amber-700 border border-amber-200',   text: pct };
+    return               { bar: 'bg-slate-300',   badge: 'bg-slate-100 text-slate-500',                           text: pct };
 }
 
 export function BestDeals({ deals, loading }: BestDealsProps) {
     if (loading) {
         return (
-            <div className="mt-6 bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-6 text-white shadow-lg">
-                <h3 className="font-bold text-lg mb-2">🔥 Best Deals</h3>
-                <div className="space-y-3">
-                    {[...Array(3)].map((_, i) => (
-                        <div key={i} className="h-16 bg-gray-700 rounded-lg animate-pulse" />
-                    ))}
-                </div>
+            <div className="space-y-2">
+                {[...Array(5)].map((_, i) => (
+                    <div key={i} className="h-[76px] bg-slate-100 rounded-xl animate-pulse" />
+                ))}
             </div>
         );
     }
 
-    if (!deals.length) return null;
+    if (!deals.length) {
+        return (
+            <p className="text-xs text-slate-400 py-4 text-center">
+                No deal data yet.
+            </p>
+        );
+    }
 
     return (
-        <div className="mt-6 bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-6 text-white shadow-lg">
-            <h3 className="font-bold text-lg mb-1">🔥 Best Deals</h3>
-            <p className="text-gray-400 text-xs mb-4">
-                Recent properties that sold well below predicted value
-            </p>
-
-            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                {deals.map((deal) => (
+        <div className="space-y-1.5">
+            {deals.map((deal) => {
+                const { bar, badge } = dealColor(deal.price_diff_pct);
+                return (
                     <a
                         key={deal.property_id}
                         href={deal.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block bg-gray-800/60 hover:bg-gray-700/60 rounded-lg p-3 transition-colors"
+                        className={`
+                            group block bg-white border border-slate-100 rounded-xl p-3
+                            hover:border-slate-200 hover:shadow-card-hover
+                            transition-all duration-150 cursor-pointer
+                            border-l-4 ${bar}
+                        `}
                     >
-                        <div className="flex justify-between items-start">
+                        <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium truncate">
+                                <p className="text-sm font-semibold text-slate-900 truncate leading-tight">
                                     {deal.address}
                                 </p>
-                                <p className="text-xs text-gray-400">
-                                    {deal.rooms} rum · {deal.area} m²
-                                    {deal.neighborhood ? ` · ${deal.neighborhood}` : ''}
+                                <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                                    {[deal.neighborhood, deal.rooms && `${deal.rooms} rum`, deal.area && `${deal.area} m²`]
+                                        .filter(Boolean).join(' · ')}
                                 </p>
                             </div>
-                            <span className="ml-2 shrink-0 text-sm font-bold text-green-400">
-                                {deal.price_diff_pct}%
-                            </span>
+                            {deal.price_diff_pct !== undefined && deal.price_diff_pct !== null && (
+                                <span className={`shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded-md ${badge}`}>
+                                    {deal.price_diff_pct > 0 ? '+' : ''}{deal.price_diff_pct}%
+                                </span>
+                            )}
                         </div>
-                        <div className="mt-2 flex gap-4 text-xs">
-                            <span className="text-gray-400">
-                                Sold: <span className="text-white font-medium">{formatSEK(deal.price)}</span>
-                            </span>
-                            <span className="text-gray-400">
-                                Pred: <span className="text-gray-300">{formatSEK(deal.predicted_price)}</span>
-                            </span>
+                        <div className="mt-2 flex items-center gap-3 text-[11px]">
+                            <span className="font-semibold text-slate-800">{formatSEK(deal.price)} kr</span>
+                            {deal.predicted_price && (
+                                <span className="text-slate-400">
+                                    pred <span className="text-slate-500">{formatSEK(deal.predicted_price)} kr</span>
+                                </span>
+                            )}
                         </div>
                     </a>
-                ))}
-            </div>
+                );
+            })}
 
-            <div className="mt-3 pt-3 border-t border-gray-700">
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span>Green = sold below prediction (deal)</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                    <div className="w-2 h-2 rounded-full bg-red-500" />
-                    <span>Red = sold above prediction</span>
-                </div>
+            <div className="pt-2 flex items-center gap-3 text-[10px] text-slate-400">
+                <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-sm bg-emerald-500 inline-block" /> sold below prediction
+                </span>
+                <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-sm bg-red-400 inline-block" /> sold above prediction
+                </span>
             </div>
         </div>
     );

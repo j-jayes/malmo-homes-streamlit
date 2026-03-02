@@ -1,0 +1,255 @@
+name: Collect Sold Property Links (Weekly)
+
+# Runs every Sunday to collect links for properties sold in the last month.
+# Uses area-band partitioning (sold_age=1m) to stay under Hemnet's 2,500
+# result limit. Each run writes to a dated subdirectory so progress is
+# isolated per-run and never carries stale state across weeks.
+#
+# For historical backfill, use collect_sold_links_backfill.yml instead.
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'  # Every Sunday at 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      run_scope:
+        description: 'Run scope'
+        required: false
+        type: choice
+        options: [national, region, city]
+        default: national
+      location_id:
+        description: 'Hemnet location ID (required for city/region scope)'
+        required: false
+        type: string
+        default: ''
+      sold_age:
+        description: 'Sold age window (1m, 3m, 6m, 12m)'
+        required: false
+        type: string
+        default: '1m'
+      test_mode:
+        description: 'Test mode (only 2 pages, 80-85m²)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: collect-sold-links-weekly
+  cancel-in-progress: false
+
+jobs:
+  collect-links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      HEMNET_SOLD_MIN_DELAY_SECONDS: 4
+      HEMNET_SOLD_MAX_DELAY_SECONDS: 8
+      BLOB_WRITE_ENABLED: ${{ vars.BLOB_WRITE_ENABLED || 'false' }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME || '' }}
+      BLOB_CONTAINER: ${{ vars.BLOB_CONTAINER || '' }}
+      BLOB_PREFIX: ${{ vars.BLOB_PREFIX || 'sweden-housing' }}
+      BLOB_PROCESSED_PREFIX: ${{ vars.BLOB_PROCESSED_PREFIX || 'processed' }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      INPUT_RUN_SCOPE: ${{ inputs.run_scope || 'national' }}
+      INPUT_LOCATION_ID: ${{ inputs.location_id || '' }}
+      INPUT_SOLD_AGE: ${{ inputs.sold_age || '1m' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e ".[scraping]"
+
+      - name: Install Playwright
+        run: |
+          source .venv/bin/activate
+          playwright install chromium --with-deps
+
+      - name: Start virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate inputs
+        run: |
+          if [ "$INPUT_RUN_SCOPE" != "national" ] && [ -z "$INPUT_LOCATION_ID" ]; then
+            echo "ERROR: $INPUT_RUN_SCOPE scope requires location_id"
+            exit 1
+          fi
+
+      - name: Set dated output directory
+        run: |
+          RUN_DATE="$(date -u +%Y%m%d)"
+          echo "RUN_DATE=$RUN_DATE" >> $GITHUB_ENV
+          echo "WEEKLY_OUTPUT=data/raw/area_ranges_national/${RUN_DATE}" >> $GITHUB_ENV
+
+      - name: Collect sold links (area-adaptive)
+        id: scrape
+        env:
+          DISPLAY: ${{ env.DISPLAY }}
+          CI: "true"
+        run: |
+          source .venv/bin/activate
+
+          LOCATION_FLAG=""
+          if [ -n "$INPUT_LOCATION_ID" ]; then
+            LOCATION_FLAG="--location-id $INPUT_LOCATION_ID"
+          fi
+
+          if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
+            EXTRA="--max-pages 2 --min-area 80 --max-area 85"
+          else
+            EXTRA="--max-pages 50 --min-area 0 --max-area 500"
+          fi
+
+          python scripts/collect_sold_links.py \
+            --sold-age $INPUT_SOLD_AGE \
+            --output-dir "$WEEKLY_OUTPUT" \
+            --headless \
+            $EXTRA \
+            $LOCATION_FLAG || {
+              echo "Scraping failed — committing partial progress"
+              git add "data/raw/area_ranges_national/$RUN_DATE/" data/.hemnet_session.json 2>/dev/null || true
+              git diff --staged --quiet || git commit -m "data: partial weekly sold links (failed)"
+              git push || true
+              exit 1
+            }
+
+      - name: Consolidate into master CSV
+        run: |
+          source .venv/bin/activate
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+
+          # Collect all per-range CSVs from ALL dated run subdirectories
+          new_files = list(Path("data/raw/area_ranges_national").rglob("properties_*.csv"))
+          if not new_files:
+              print("No range CSV files found")
+              raise SystemExit(0)
+
+          new_df = pd.concat([pd.read_csv(f) for f in new_files], ignore_index=True)
+          main_file = Path("data/raw/sold_properties_all_areas.csv")
+          if main_file.exists():
+              main_df = pd.read_csv(main_file)
+              combined = pd.concat([main_df, new_df]).drop_duplicates(subset=["property_id"], keep="last")
+          else:
+              combined = new_df.drop_duplicates(subset=["property_id"])
+
+          combined.to_csv(main_file, index=False)
+          print(f"Master CSV updated: {len(combined)} unique property links")
+          PY
+
+      - name: Push results
+        run: |
+          git pull origin main || true
+          git add \
+            "data/raw/area_ranges_national/$RUN_DATE/" \
+            data/raw/sold_properties_all_areas.csv \
+            data/.hemnet_session.json 2>/dev/null || true
+          if ! git diff --staged --quiet; then
+            git commit -m "data: weekly sold links ${RUN_DATE} (sold_age=${INPUT_SOLD_AGE})"
+            git push
+          else
+            echo "No new data to commit"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Weekly Sold Links Collection" >> $GITHUB_STEP_SUMMARY
+          if [ -f "data/raw/sold_properties_all_areas.csv" ]; then
+            TOTAL=$(tail -n +2 data/raw/sold_properties_all_areas.csv | wc -l)
+            echo "- **Total links in master CSV**: $TOTAL" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f "data/raw/area_ranges_national/$RUN_DATE/progress.json" ]; then
+            echo "- **Ranges completed this run**: $(jq '.completed_ranges | length' data/raw/area_ranges_national/$RUN_DATE/progress.json)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Azure login (OIDC)
+        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload to Azure Blob
+        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
+        run: |
+          set -euo pipefail
+          RUN_DATE_PARTITION="${RUN_DATE:0:4}-${RUN_DATE:4:2}-${RUN_DATE:6:2}"
+          if [ -d "data/raw/area_ranges_national/$RUN_DATE" ]; then
+            az storage blob upload-batch \
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+              --destination "$BLOB_CONTAINER" \
+              --destination-path "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/sold_links/run_date=$RUN_DATE_PARTITION" \
+              --source "data/raw/area_ranges_national/$RUN_DATE" \
+              --overwrite true --auth-mode login
+          fi
+          if [ -f "data/raw/sold_properties_all_areas.csv" ]; then
+            az storage blob upload \
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+              --container-name "$BLOB_CONTAINER" \
+              --name "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/sold_links/sold_properties_all_areas.csv" \
+              --file "data/raw/sold_properties_all_areas.csv" \
+              --overwrite true --auth-mode login
+          fi
+
+      - name: Blob export skipped notice
+        if: always() && !(env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != '')
+        run: echo "Blob export skipped — configure BLOB_WRITE_ENABLED and Azure secrets to enable."
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-sold-links-${{ github.run_id }}
+          path: |
+            data/raw/area_ranges_national/${{ env.RUN_DATE }}/
+            data/raw/sold_properties_all_areas.csv
+          retention-days: 14
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Weekly sold-link collection failed - ${new Date().toISOString().split('T')[0]}`,
+              body: `Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.\n\nThe dated output directory preserves any partial progress — re-run to pick up where it left off.`,
+              labels: ['automation', 'scraping', 'bug']
+            })

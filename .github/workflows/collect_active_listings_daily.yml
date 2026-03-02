@@ -1,9 +1,13 @@
-name: Active Listings Scraper
+name: Collect Active Listings (Daily)
+
+# Runs daily to capture current for-sale listings: links, detail pages,
+# DuckDB aggregation, ML predictions, and description archiving.
+# Active listings are the only source of ad text (descriptions), which
+# Hemnet removes once a property is sold.
 
 on:
   schedule:
-    # Run daily at 06:00 UTC (08:00 Stockholm time)
-    - cron: '0 6 * * *'
+    - cron: '0 6 * * *'  # 06:00 UTC = 08:00 Stockholm
   workflow_dispatch:
     inputs:
       run_scope:
@@ -50,13 +54,13 @@ permissions:
   issues: write
 
 concurrency:
-  group: active-listings-scraper
+  group: collect-active-listings
   cancel-in-progress: false
 
 jobs:
   scrape-active:
     runs-on: ubuntu-latest
-    timeout-minutes: 350  # 5h50m budget for ~2500 detail pages
+    timeout-minutes: 350
     env:
       PYTHONUNBUFFERED: "1"
       HEMNET_DETAIL_MIN_DELAY_SECONDS: 4
@@ -67,7 +71,6 @@ jobs:
       BLOB_PREFIX: ${{ vars.BLOB_PREFIX || 'sweden-housing' }}
       BLOB_RAW_PREFIX: ${{ vars.BLOB_RAW_PREFIX || 'raw' }}
       BLOB_PROCESSED_PREFIX: ${{ vars.BLOB_PROCESSED_PREFIX || 'processed' }}
-      BLOB_MODELS_PREFIX: models
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -95,33 +98,33 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Install project dependencies
+      - name: Install dependencies
         run: |
           uv venv
           source .venv/bin/activate
           uv pip install -e ".[scraping,data,ml,storage]"
 
-      - name: Install Playwright browsers
+      - name: Install Playwright
         run: |
           source .venv/bin/activate
           playwright install chromium --with-deps
 
-      - name: Start virtual display (Xvfb)
+      - name: Start virtual display
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
           Xvfb :99 -screen 0 1920x1080x24 > /tmp/xvfb.log 2>&1 &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
 
-      - name: Configure git identity
+      - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Validate run scope inputs
+      - name: Validate inputs
         run: |
           if [ "$INPUT_RUN_SCOPE" != "national" ] && [ -z "$INPUT_LOCATION_ID" ]; then
-            echo "$INPUT_RUN_SCOPE scope requires location_id"
+            echo "ERROR: $INPUT_RUN_SCOPE scope requires location_id"
             exit 1
           fi
 
@@ -133,18 +136,15 @@ jobs:
           RUN_DATE="$(date -u +%Y%m%d)"
           BATCH_DIR="data/processed/active_listings/batches_${RUN_DATE}"
           if [ -d "$BATCH_DIR" ]; then
-            echo "Clearing existing batch directory for rerun safety: $BATCH_DIR"
+            echo "Clearing existing batch dir for rerun safety: $BATCH_DIR"
             rm -rf "$BATCH_DIR"
           fi
           PREDICT_FLAG=""
-          if [ "$INPUT_PREDICT" = "true" ]; then
-            PREDICT_FLAG="--predict"
-          fi
+          if [ "$INPUT_PREDICT" = "true" ]; then PREDICT_FLAG="--predict"; fi
           LOCATION_FLAG=""
-          if [ -n "$INPUT_LOCATION_ID" ]; then
-            LOCATION_FLAG="--location-id $INPUT_LOCATION_ID"
-          fi
-          python scripts/scrape_active_listings.py \
+          if [ -n "$INPUT_LOCATION_ID" ]; then LOCATION_FLAG="--location-id $INPUT_LOCATION_ID"; fi
+
+          python scripts/collect_active_listings.py \
             --max-pages "$INPUT_MAX_PAGES" \
             --max-records "$INPUT_MAX_RECORDS" \
             --batch-size "$INPUT_BATCH_SIZE" \
@@ -154,7 +154,7 @@ jobs:
             $LOCATION_FLAG \
             $PREDICT_FLAG
 
-      - name: Summarize results
+      - name: Summarise results
         if: always()
         run: |
           source .venv/bin/activate
@@ -162,51 +162,38 @@ jobs:
           import json, os, pathlib, sys
 
           db_path = pathlib.Path("data/database/properties.duckdb")
-          run_scope = os.environ.get("INPUT_RUN_SCOPE", "national")
-          location_id = os.environ.get("INPUT_LOCATION_ID", "")
-          scope_line = f"## Active Listings Scrape ({run_scope})"
-          if location_id:
-              scope_line += f" - location_id={location_id}"
-          summary = [scope_line]
+          scope = os.environ.get("INPUT_RUN_SCOPE", "national")
+          loc   = os.environ.get("INPUT_LOCATION_ID", "")
+          header = f"## Active Listings Scrape ({scope})"
+          if loc:
+              header += f" — location_id={loc}"
+          lines = [header]
 
           if db_path.exists():
               import duckdb
               conn = duckdb.connect(str(db_path), read_only=True)
+              for label, sql in [
+                  ("Active listings", "SELECT COUNT(*) FROM active_listings"),
+                  ("Predictions",     "SELECT COUNT(*) FROM active_predictions"),
+              ]:
+                  try:
+                      n = conn.execute(sql).fetchone()[0]
+                      lines.append(f"- **{label}**: {n}")
+                  except Exception:
+                      lines.append(f"- {label}: table not found")
               try:
-                  count = conn.execute("SELECT COUNT(*) FROM active_listings").fetchone()[0]
-                  summary.append(f"- **Active listings**: {count}")
+                  n = conn.execute("SELECT COUNT(*) FROM description_archive").fetchone()[0]
+                  lines.append(f"- **Description archive**: {n}")
               except Exception:
-                  summary.append("- Active listings table not found")
-              try:
-                  pcount = conn.execute("SELECT COUNT(*) FROM active_predictions").fetchone()[0]
-                  summary.append(f"- **Predictions**: {pcount}")
-              except Exception:
-                  summary.append("- Predictions table not found")
-              try:
-                  dcount = conn.execute("SELECT COUNT(*) FROM description_archive").fetchone()[0]
-                  with_desc = conn.execute("SELECT COUNT(*) FROM description_archive WHERE LENGTH(description) > 100").fetchone()[0]
-                  summary.append(f"- **Description archive**: {dcount} total, {with_desc} with rich text")
-              except Exception:
-                  summary.append("- Description archive not yet created")
+                  lines.append("- Description archive: not yet created")
               conn.close()
           else:
-              summary.append("- Database not found")
+              lines.append("- Database not found")
 
-          print("\n".join(summary))
+          print("\n".join(lines))
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
-              fh.write("\n".join(summary) + "\n")
+              fh.write("\n".join(lines) + "\n")
           PY
-
-      - name: Build active export manifest (dry-run)
-        if: always()
-        run: |
-          if [ -f scripts/export_active_artifacts.py ]; then
-            source .venv/bin/activate
-            RUN_DATE="$(date -u +%Y%m%d)"
-            python scripts/export_active_artifacts.py --run-date "$RUN_DATE" --log-level INFO
-          else
-            echo "No export manifest script found; skipping dry-run manifest generation"
-          fi
 
       - name: Azure login (OIDC)
         if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
@@ -216,49 +203,35 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Upload active artifacts to Azure Blob (OIDC)
+      - name: Upload to Azure Blob
         if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
         run: |
           set -euo pipefail
           RUN_DATE="$(date -u +%Y%m%d)"
           RUN_DATE_PARTITION="${RUN_DATE:0:4}-${RUN_DATE:4:2}-${RUN_DATE:6:2}"
-
           LINKS_FILE="data/processed/active_listings/links_${RUN_DATE}.parquet"
           BATCH_DIR="data/processed/active_listings/batches_${RUN_DATE}"
-
           if [ -f "$LINKS_FILE" ]; then
             az storage blob upload \
-              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
-              --container-name "$BLOB_CONTAINER" \
-              --name "$BLOB_PREFIX/$BLOB_RAW_PREFIX/active_links/run_date=$RUN_DATE_PARTITION/$(basename "$LINKS_FILE")" \
-              --file "$LINKS_FILE" \
-              --overwrite true \
-              --auth-mode login
-          else
-            echo "No links file found for run date ${RUN_DATE}; skipping link upload"
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --container-name "$BLOB_CONTAINER" \
+              --name "$BLOB_PREFIX/$BLOB_RAW_PREFIX/active_links/run_date=$RUN_DATE_PARTITION/$(basename $LINKS_FILE)" \
+              --file "$LINKS_FILE" --overwrite true --auth-mode login
           fi
-
           if [ -d "$BATCH_DIR" ]; then
             az storage blob upload-batch \
-              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
-              --destination "$BLOB_CONTAINER" \
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --destination "$BLOB_CONTAINER" \
               --destination-path "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/active_batches/run_date=$RUN_DATE_PARTITION" \
-              --source "$BATCH_DIR" \
-              --overwrite true \
-              --auth-mode login
-          else
-            echo "No batch directory found for run date ${RUN_DATE}; skipping batch upload"
+              --source "$BATCH_DIR" --overwrite true --auth-mode login
           fi
 
       - name: Blob export skipped notice
         if: always() && !(env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != '')
-        run: |
-          echo "Blob export skipped. Ensure BLOB_WRITE_ENABLED=true, AZURE_STORAGE_ACCOUNT_NAME, BLOB_CONTAINER, and OIDC secrets are configured."
+        run: echo "Blob export skipped — configure BLOB_WRITE_ENABLED and Azure secrets to enable."
 
-      - name: Pull latest changes
+      - name: Pull and commit
         run: git pull --rebase --autostash
 
-      - name: Commit and push changes
+      - name: Commit and push
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "data: active listings snapshot ${{ github.run_number }}"
@@ -266,16 +239,6 @@ jobs:
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
           file_pattern: 'data/processed/active_listings/**'
           commit_options: '--no-verify'
-          skip_fetch: false
-          skip_checkout: false
-
-      - name: Collect Xvfb log
-        if: always()
-        run: |
-          mkdir -p tmp
-          if [ -f /tmp/xvfb.log ]; then
-            cp /tmp/xvfb.log tmp/xvfb.log
-          fi
 
       - name: Upload artifacts
         if: always()
@@ -284,7 +247,7 @@ jobs:
           name: active-listings-${{ github.run_number }}
           path: |
             data/processed/active_listings/
-            tmp/xvfb.log
+            /tmp/xvfb.log
           retention-days: 7
 
       - name: Create issue on failure
@@ -295,7 +258,7 @@ jobs:
             github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: '🚨 Active listings scrape failed - ' + new Date().toISOString().split('T')[0],
-              body: 'The active listings scraper failed. Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.',
+              title: `Active listings scrape failed — ${new Date().toISOString().split('T')[0]}`,
+              body: `Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.`,
               labels: ['automation', 'scraping', 'bug']
             })

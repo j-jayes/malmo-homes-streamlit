@@ -37,7 +37,7 @@ export function Map({ properties, activeListings = [], view }: MapProps) {
     const defaultCenter: [number, number] = [55.604981, 13.003822];
 
     return (
-        <div className="h-[600px] w-full rounded-xl overflow-hidden shadow-lg border border-gray-200">
+        <div className="absolute inset-0 overflow-hidden">
             <MapContainer
                 center={defaultCenter}
                 zoom={13}
@@ -65,7 +65,7 @@ export function Map({ properties, activeListings = [], view }: MapProps) {
                                 }}
                             >
                                 <Popup>
-                                    <div className="min-w-[200px]">
+                                    <div className="min-w-[210px] p-3">
                                         <h3 className="font-bold text-sm mb-1">{prop.address}</h3>
                                         {prop.neighborhood && (
                                             <p className="text-xs text-gray-500 mb-2">{prop.neighborhood}</p>
@@ -114,7 +114,7 @@ export function Map({ properties, activeListings = [], view }: MapProps) {
                                             href={prop.url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-xs text-blue-500 hover:underline mt-1 block"
+                                            className="text-xs text-blue-600 hover:text-blue-800 hover:underline mt-2 block font-medium"
                                         >
                                             View on Hemnet →
                                         </a>
@@ -141,9 +141,9 @@ export function Map({ properties, activeListings = [], view }: MapProps) {
                                 }}
                             >
                                 <Popup>
-                                    <div className="min-w-[200px]">
+                                    <div className="min-w-[210px] p-3">
                                         <div className="flex items-center gap-1 mb-1">
-                                            <span className="bg-blue-100 text-blue-800 text-[10px] font-semibold px-1.5 py-0.5 rounded">FOR SALE</span>
+                                            <span className="bg-blue-50 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-blue-100">For Sale</span>
                                         </div>
                                         <h3 className="font-bold text-sm mb-1">{listing.address}</h3>
                                         {listing.neighborhood && (
@@ -195,7 +195,7 @@ export function Map({ properties, activeListings = [], view }: MapProps) {
                                             href={listing.url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-xs text-blue-500 hover:underline mt-1 block"
+                                            className="text-xs text-blue-600 hover:text-blue-800 hover:underline mt-2 block font-medium"
                                         >
                                             View on Hemnet →
                                         </a>

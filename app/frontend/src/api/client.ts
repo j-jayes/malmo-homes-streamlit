@@ -71,6 +71,31 @@ export interface ActiveListing {
     price_diff_pct?: number;
 }
 
+export interface ShapFeature {
+    feature: string;
+    display_name: string;
+    value: number;
+    shap_value: number;
+}
+
+export interface WordImpact {
+    word: string;
+    impact: number;
+    coefficient: number;
+    tfidf_score: number;
+}
+
+export interface ExplanationResponse {
+    property_id: string;
+    narrative: string;
+    predicted_price?: number;
+    asking_price?: number;
+    price_diff_pct?: number;
+    shap_features: ShapFeature[];
+    text_premium?: number;
+    word_impacts: WordImpact[];
+}
+
 export interface Filters {
     min_price?: number;
     max_price?: number;
@@ -78,6 +103,42 @@ export interface Filters {
     max_area?: number;
     rooms?: number;
     neighborhood?: string;
+}
+
+export interface NeighborhoodStat {
+    neighborhood: string;
+    median_price_per_sqm: number;
+    median_price: number;
+    count: number;
+    avg_days_on_market?: number;
+}
+
+export interface RoomStat {
+    rooms: number;
+    median_price: number;
+    median_price_per_sqm: number;
+    count: number;
+    avg_area: number;
+}
+
+export interface PriceTrendPoint {
+    month: string;
+    median_price: number;
+    count: number;
+}
+
+export interface BuildingDecadeStat {
+    decade: string;
+    decade_start: number;
+    median_price_per_sqm: number;
+    count: number;
+}
+
+export interface FeeAnalysisPoint {
+    fee_bucket: number;
+    price: number;
+    area_group: string;
+    count: number;
 }
 
 export const api = {
@@ -124,6 +185,38 @@ export const api = {
             `${API_URL}/active`,
             { params }
         );
+        return response.data;
+    },
+
+    getExplanation: async (propertyId: string): Promise<ExplanationResponse> => {
+        const response = await axios.get<ExplanationResponse>(
+            `${API_URL}/active/${propertyId}/explanation`
+        );
+        return response.data;
+    },
+
+    getNeighborhoodStats: async (): Promise<NeighborhoodStat[]> => {
+        const response = await axios.get<NeighborhoodStat[]>(`${API_URL}/insights/neighborhoods`);
+        return response.data;
+    },
+
+    getRoomStats: async (): Promise<RoomStat[]> => {
+        const response = await axios.get<RoomStat[]>(`${API_URL}/insights/rooms`);
+        return response.data;
+    },
+
+    getPriceTrend: async (): Promise<PriceTrendPoint[]> => {
+        const response = await axios.get<PriceTrendPoint[]>(`${API_URL}/insights/price-trend`);
+        return response.data;
+    },
+
+    getBuildingDecadeStats: async (): Promise<BuildingDecadeStat[]> => {
+        const response = await axios.get<BuildingDecadeStat[]>(`${API_URL}/insights/building-years`);
+        return response.data;
+    },
+
+    getFeeAnalysis: async (): Promise<FeeAnalysisPoint[]> => {
+        const response = await axios.get<FeeAnalysisPoint[]>(`${API_URL}/insights/fee-analysis`);
         return response.data;
     },
 };

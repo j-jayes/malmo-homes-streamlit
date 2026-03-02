@@ -160,23 +160,46 @@ class SoldPropertiesScraper:
             logger.debug(f"Could not extract total results: {e}")
             return 0
     
-    def get_total_results_count(self, location_id: str, area_min: int, area_max: int, sold_age: str = None) -> int:
-        """Get result count for an area range without scraping full pages"""
-        
+    def get_total_results_count(
+        self,
+        location_id: str,
+        area_min: int,
+        area_max: int,
+        sold_age: str = None,
+        sold_min: str = None,
+        sold_max: str = None,
+    ) -> int:
+        """Get result count for an area range without scraping full pages.
+
+        Args:
+            location_id: Hemnet location ID, or empty string for all Sweden.
+            area_min: Minimum living area in m².
+            area_max: Maximum living area in m².
+            sold_age: Relative age window ("1m", "3m", "6m", "12m").
+            sold_min: Absolute sold-from date (YYYY-MM-DD). Requires sold_max.
+            sold_max: Absolute sold-to date exclusive (YYYY-MM-DD). Requires sold_min.
+
+        Note:
+            ``sold_min``/``sold_max`` take precedence over ``sold_age``; the two
+            forms are mutually exclusive in Hemnet's URL scheme.
+        """
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
                 args=['--disable-blink-features=AutomationControlled']
             )
-            
+
             try:
                 context = self._setup_browser_context(browser)
                 page = context.new_page()
-                
+
                 url = f"{self.BASE_URL}?item_types[]=bostadsratt&living_area_min={area_min}&living_area_max={area_max}"
                 if location_id:
                     url += f"&location_ids[]={location_id}"
-                if sold_age:
+                # Explicit date range takes precedence over relative sold_age window
+                if sold_min and sold_max:
+                    url += f"&sold_age=all&sold_min={sold_min}&sold_max={sold_max}"
+                elif sold_age:
                     url += f"&sold_age={sold_age}"
                 
                 logger.info(f"Checking result count for area {area_min}-{area_max}m²")
@@ -202,24 +225,29 @@ class SoldPropertiesScraper:
         area_max: int,
         location_id: str = "17989",
         max_pages: int = 50,
-        sold_age: str = None
+        sold_age: str = None,
+        sold_min: str = None,
+        sold_max: str = None,
     ) -> List[Dict]:
-        """Scrape sold properties within a specific living area range
-        
+        """Scrape sold property links within a living area range.
+
         Args:
-            area_min: Minimum living area in m²
-            area_max: Maximum living area in m²
-            location_id: Hemnet location ID (default: Malmö)
-            max_pages: Maximum pages to scrape
-        
+            area_min: Minimum living area in m².
+            area_max: Maximum living area in m².
+            location_id: Hemnet location ID (default: Malmö). Empty = all Sweden.
+            max_pages: Maximum search-result pages to scrape.
+            sold_age: Relative age window ("1m", "3m", "6m", "12m").
+            sold_min: Absolute sold-from date (YYYY-MM-DD). Requires sold_max.
+            sold_max: Absolute sold-to date exclusive (YYYY-MM-DD). Requires sold_min.
+
         Returns:
-            List of property data dictionaries
+            List of property data dicts with ``property_id``, ``url``,
+            ``area_range``, and ``scraped_at``.
         """
-        
         properties = []
         area_str = f"{area_min}-{area_max}m²"
         logger.info(f"Starting scrape for area range {area_str}")
-        
+
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=self.headless,
@@ -231,16 +259,19 @@ class SoldPropertiesScraper:
                     '--disable-setuid-sandbox',
                 ]
             )
-            
+
             try:
                 context = self._setup_browser_context(browser)
                 page = context.new_page()
-                
+
                 # Build URL with living area filter
                 url = f"{self.BASE_URL}?item_types[]=bostadsratt&living_area_min={area_min}&living_area_max={area_max}"
                 if location_id:
                     url += f"&location_ids[]={location_id}"
-                if sold_age:
+                # Explicit date range takes precedence over relative sold_age window
+                if sold_min and sold_max:
+                    url += f"&sold_age=all&sold_min={sold_min}&sold_max={sold_max}"
+                elif sold_age:
                     url += f"&sold_age={sold_age}"
                 
                 logger.info(f"Navigating to: {url}")
