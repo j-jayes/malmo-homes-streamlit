@@ -16,6 +16,8 @@ name: Collect Sold Property Links (Historical Backfill)
 # stay under 2,400 results per query even at national scope.
 
 on:
+  schedule:
+    - cron: '30 2,10,18 * * *' # Every 8h at offsets allowing 5h 50m duration
   workflow_dispatch:
     inputs:
       start_month:
@@ -72,12 +74,12 @@ jobs:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      INPUT_START_MONTH: ${{ inputs.start_month }}
-      INPUT_END_MONTH: ${{ inputs.end_month }}
+      INPUT_START_MONTH: ${{ inputs.start_month || '2020-01' }}
+      INPUT_END_MONTH: ${{ inputs.end_month || '2025-12' }}
       INPUT_LOCATION_ID: ${{ inputs.location_id || '' }}
       INPUT_INITIAL_STEP: ${{ inputs.initial_step || 50 }}
       INPUT_MAX_PAGES: ${{ inputs.max_pages || 50 }}
-      INPUT_TEST_MODE: ${{ inputs.test_mode || false }}
+      INPUT_TEST_MODE: ${{ inputs.test_mode || 'false' }}
 
     steps:
       - name: Checkout repository
@@ -205,38 +207,54 @@ jobs:
               print(f"MONTH {key}: {sold_min} → {sold_max}")
               print(f"{'='*70}")
 
-              # Skip if already done (progress.json exists with completed ranges)
+              # Skip if already done (progress.json has a completed range ending at >= target_max)
               progress_file = Path(out_dir) / "progress.json"
+              skip_scrape = False
+              target_max = 85 if test_mode else 500
+              
               if progress_file.exists():
                   import json as _json
                   try:
                       prog = _json.loads(progress_file.read_text())
-                      done = len(prog.get("completed_ranges", []))
+                      ranges = prog.get("completed_ranges", [])
+                      done = len(ranges)
                       if done > 0:
-                          print(f"  Already has {done} completed ranges — skipping scrape (reusing)")
+                          # Check if the highest max matches our target limit
+                          highest_max = 0
+                          for r in ranges:
+                              try:
+                                  _, r_max = map(int, r.split("-"))
+                                  highest_max = max(highest_max, r_max)
+                              except ValueError:
+                                  pass
+                          
+                          if highest_max >= target_max:
+                              print(f"  Already has {done} completed ranges reaching {highest_max}m² — skipping scrape (reusing)")
+                              skip_scrape = True
                   except Exception:
                       pass
 
-              cmd = [
-                  venv_python, "scripts/collect_sold_links.py",
-                  "--sold-min", sold_min,
-                  "--sold-max", sold_max,
-                  "--output-dir", out_dir,
-                  "--initial-step", step_flag,
-                  "--max-pages", pages_flag,
-                  "--headless",
-              ]
-              if test_mode:
-                  cmd += ["--min-area", "80", "--max-area", "85"]
+              if not skip_scrape:
+                  cmd = [
+                      venv_python, "scripts/collect_sold_links.py",
+                      "--sold-min", sold_min,
+                      "--sold-max", sold_max,
+                      "--output-dir", out_dir,
+                      "--initial-step", step_flag,
+                      "--max-pages", pages_flag,
+                      "--headless",
+                  ]
+                  if test_mode:
+                      cmd += ["--min-area", "80", "--max-area", "85"]
 
-              if location_flag:
-                  cmd += ["--location-id", location_flag]
+                  if location_flag:
+                      cmd += ["--location-id", location_flag]
 
-              print(f"Running: {' '.join(cmd)}")
-              result = subprocess.run(cmd)
+                  print(f"Running: {' '.join(cmd)}")
+                  result = subprocess.run(cmd)
 
-              if result.returncode != 0:
-                  print(f"  WARNING: scraper exited {result.returncode} — committing partial and continuing")
+                  if result.returncode != 0:
+                      print(f"  WARNING: scraper exited {result.returncode} — committing partial and continuing")
 
               # Consolidate this month's output into master CSV
               consolidate_cmd = [

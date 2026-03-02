@@ -243,7 +243,24 @@ class AdaptiveAreaScraper:
         current = min_area
         all_properties: List[Dict] = []
 
+        # Map completed ranges for fast skipping
+        completed = {}
+        for r_str in self.progress.get("completed_ranges", []):
+            try:
+                c_min, c_max = map(int, r_str.split("-"))
+                completed[c_min] = c_max
+            except ValueError:
+                continue
+
         while current < max_area_limit:
+            if current in completed:
+                logger.info(
+                    "Range starting at %dm² already completed (ends at %dm²). Skipping.",
+                    current, completed[current]
+                )
+                current = completed[current]
+                continue
+
             range_min, range_max = self.find_optimal_range(current, current + initial_step)
 
             if range_max <= range_min:
