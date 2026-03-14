@@ -186,7 +186,12 @@ class PropertyScraper:
         try:
             html = page.content()
             if '__NEXT_DATA__' not in html:
-                logger.warning("__NEXT_DATA__ not found in page")
+                # Detect Hemnet 404 pages (removed / expired listings)
+                title = page.title()
+                if 'hittades inte' in title.lower() or 'not found' in title.lower() or '404' in title:
+                    logger.warning("Listing removed from Hemnet (404): %s", title)
+                else:
+                    logger.warning("__NEXT_DATA__ not found in page (title: %s)", title)
                 return None
             
             match = re.search(

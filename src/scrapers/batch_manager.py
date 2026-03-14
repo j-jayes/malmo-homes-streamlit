@@ -241,10 +241,10 @@ class BatchManager:
         for i, record in enumerate(urls, 1):
             url = record['url']
             logger.info(f"[{i}/{len(urls)}] {url}")
-            
+
             try:
                 property_data = self.scraper.scrape_property(url)
-                
+
                 if property_data:
                     successful.append(property_data)
                     logger.info(f"  ✓ Success: {property_data.address}")
@@ -254,10 +254,17 @@ class BatchManager:
                             url=property_data.url,
                         )
                 else:
+                    # None return means a permanent failure (404, validation error,
+                    # or unrecoverable parse error).  Mark as seen so we don't
+                    # retry it on every subsequent run.
                     failed.append({**record, 'error': 'No data returned'})
                     logger.error(f"  ✗ Failed: No data returned")
-                    
+                    if self.progress_tracker:
+                        self.progress_tracker.record_failure(url=url)
+
             except Exception as e:
+                # Unexpected exception — could be transient (browser crash, OOM).
+                # Do NOT add to progress cache; let the next run retry it.
                 failed.append({**record, 'error': str(e)})
                 logger.error(f"  ✗ Failed: {e}")
         

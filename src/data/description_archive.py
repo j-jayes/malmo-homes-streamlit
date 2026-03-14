@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
     description      VARCHAR NOT NULL,
     first_seen       DATE NOT NULL,
     last_seen        DATE NOT NULL,
-    scraped_at       VARCHAR
+    scraped_at       VARCHAR,
+    sold_property_id VARCHAR
 );
 """
 
@@ -102,8 +103,9 @@ class DescriptionArchive:
                     description,
                     '{today}'::DATE AS first_seen,
                     '{today}'::DATE AS last_seen,
-                    scraped_at
-                                FROM read_parquet($1, union_by_name = true)
+                    scraped_at,
+                    NULL AS sold_property_id
+                FROM read_parquet($1, union_by_name = true)
                 WHERE description IS NOT NULL
                   AND LENGTH(TRIM(description)) > 0
                 ON CONFLICT (property_id) DO UPDATE
@@ -152,7 +154,8 @@ class DescriptionArchive:
                     description,
                     '{today}'::DATE AS first_seen,
                     '{today}'::DATE AS last_seen,
-                    scraped_at
+                    scraped_at,
+                    NULL AS sold_property_id
                 FROM active_listings
                 WHERE description IS NOT NULL
                   AND LENGTH(TRIM(description)) > 0

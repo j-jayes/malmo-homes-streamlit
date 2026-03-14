@@ -36,7 +36,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
 
 concurrency:
   group: collect-sold-links-weekly
@@ -49,14 +48,6 @@ jobs:
     env:
       HEMNET_SOLD_MIN_DELAY_SECONDS: 4
       HEMNET_SOLD_MAX_DELAY_SECONDS: 8
-      BLOB_WRITE_ENABLED: ${{ vars.BLOB_WRITE_ENABLED || 'false' }}
-      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME || '' }}
-      BLOB_CONTAINER: ${{ vars.BLOB_CONTAINER || '' }}
-      BLOB_PREFIX: ${{ vars.BLOB_PREFIX || 'sweden-housing' }}
-      BLOB_PROCESSED_PREFIX: ${{ vars.BLOB_PROCESSED_PREFIX || 'processed' }}
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       INPUT_RUN_SCOPE: ${{ inputs.run_scope || 'national' }}
       INPUT_LOCATION_ID: ${{ inputs.location_id || '' }}
       INPUT_SOLD_AGE: ${{ inputs.sold_age || '1m' }}
@@ -196,40 +187,6 @@ jobs:
           if [ -f "data/raw/area_ranges_national/$RUN_DATE/progress.json" ]; then
             echo "- **Ranges completed this run**: $(jq '.completed_ranges | length' data/raw/area_ranges_national/$RUN_DATE/progress.json)" >> $GITHUB_STEP_SUMMARY
           fi
-
-      - name: Azure login (OIDC)
-        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Upload to Azure Blob
-        if: env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != ''
-        run: |
-          set -euo pipefail
-          RUN_DATE_PARTITION="${RUN_DATE:0:4}-${RUN_DATE:4:2}-${RUN_DATE:6:2}"
-          if [ -d "data/raw/area_ranges_national/$RUN_DATE" ]; then
-            az storage blob upload-batch \
-              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
-              --destination "$BLOB_CONTAINER" \
-              --destination-path "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/sold_links/run_date=$RUN_DATE_PARTITION" \
-              --source "data/raw/area_ranges_national/$RUN_DATE" \
-              --overwrite true --auth-mode login
-          fi
-          if [ -f "data/raw/sold_properties_all_areas.csv" ]; then
-            az storage blob upload \
-              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
-              --container-name "$BLOB_CONTAINER" \
-              --name "$BLOB_PREFIX/$BLOB_PROCESSED_PREFIX/sold_links/sold_properties_all_areas.csv" \
-              --file "data/raw/sold_properties_all_areas.csv" \
-              --overwrite true --auth-mode login
-          fi
-
-      - name: Blob export skipped notice
-        if: always() && !(env.BLOB_WRITE_ENABLED == 'true' && env.AZURE_STORAGE_ACCOUNT_NAME != '' && env.BLOB_CONTAINER != '' && env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != '')
-        run: echo "Blob export skipped — configure BLOB_WRITE_ENABLED and Azure secrets to enable."
 
       - name: Upload artifacts
         if: always()

@@ -268,6 +268,11 @@ def main(argv: list[str] | None = None) -> int:
     if tracker:
         tracker.save()
 
+    # Nothing left to process — all URLs are already in the progress cache.
+    if metadata.get("total_processed", 0) == 0:
+        logger.info("No new URLs to process — all source URLs already in progress cache.")
+        return 0
+
     # Tolerate up to 10% failure rate — validation rejects (low prices, etc.)
     # are expected for a small fraction of listings.
     if success_rate >= 90.0:

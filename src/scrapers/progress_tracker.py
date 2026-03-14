@@ -73,6 +73,21 @@ class ProgressTracker:
         self._identifiers.add(fingerprint)
         self._dirty = True
 
+    def record_failure(
+        self,
+        record: Optional[Mapping[str, str]] = None,
+        *,
+        property_id: Optional[str] = None,
+        url: Optional[str] = None,
+    ) -> None:
+        """Permanently mark a URL as processed (failed) so it is never retried.
+
+        Use this for persistent failures such as 404 pages or Pydantic validation
+        errors, where retrying will never succeed.  Transient errors (network
+        timeouts, browser crashes) should NOT be recorded here.
+        """
+        self.record_success(record, property_id=property_id, url=url)
+
     def save(self) -> None:
         if not self._dirty:
             return
