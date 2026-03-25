@@ -1500,10 +1500,76 @@
       "file_size_kb": 26.03,
       "timestamp": "2026-03-25T10:57:35.987002",
       "file": "batch_0249.parquet"
+    },
+    "250": {
+      "count": 10,
+      "file_size_kb": 23.53,
+      "timestamp": "2026-03-25T10:58:42.953896",
+      "file": "batch_0250.parquet"
+    },
+    "251": {
+      "count": 10,
+      "file_size_kb": 32.13,
+      "timestamp": "2026-03-25T10:59:46.514324",
+      "file": "batch_0251.parquet"
+    },
+    "252": {
+      "count": 10,
+      "file_size_kb": 23.14,
+      "timestamp": "2026-03-25T11:00:50.411761",
+      "file": "batch_0252.parquet"
+    },
+    "253": {
+      "count": 10,
+      "file_size_kb": 28.75,
+      "timestamp": "2026-03-25T11:01:53.198433",
+      "file": "batch_0253.parquet"
+    },
+    "254": {
+      "count": 10,
+      "file_size_kb": 26.41,
+      "timestamp": "2026-03-25T11:02:57.137544",
+      "file": "batch_0254.parquet"
+    },
+    "255": {
+      "count": 10,
+      "file_size_kb": 21.3,
+      "timestamp": "2026-03-25T11:03:59.832603",
+      "file": "batch_0255.parquet"
+    },
+    "256": {
+      "count": 10,
+      "file_size_kb": 25.77,
+      "timestamp": "2026-03-25T11:05:04.245046",
+      "file": "batch_0256.parquet"
+    },
+    "257": {
+      "count": 10,
+      "file_size_kb": 22.1,
+      "timestamp": "2026-03-25T11:06:08.560596",
+      "file": "batch_0257.parquet"
+    },
+    "258": {
+      "count": 10,
+      "file_size_kb": 24.01,
+      "timestamp": "2026-03-25T11:07:12.895381",
+      "file": "batch_0258.parquet"
+    },
+    "259": {
+      "count": 10,
+      "file_size_kb": 26.33,
+      "timestamp": "2026-03-25T11:08:15.496705",
+      "file": "batch_0259.parquet"
+    },
+    "260": {
+      "count": 6,
+      "file_size_kb": 18.07,
+      "timestamp": "2026-03-25T11:08:54.227567",
+      "file": "batch_0260.parquet"
     }
   },
-  "total_processed": 2500,
-  "total_successful": 2385,
+  "total_processed": 2606,
+  "total_successful": 2491,
   "total_failed": 115,
-  "last_batch": 249
+  "last_batch": 260
 }
