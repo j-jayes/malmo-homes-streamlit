@@ -295,8 +295,10 @@ jobs:
             echo "Total unique property links in master CSV: $TOTAL"
           fi
           if [ -d "data/raw/sold_links" ]; then
-            MONTHS=$(ls -d data/raw/sold_links/*/ 2>/dev/null | wc -l)
-            echo "Month directories scraped: $MONTHS"
+            for HT in bostadsratt villa radhus fritidshus tomt gard; do
+              N=$(ls -d "data/raw/sold_links/${HT}/"*/ 2>/dev/null | wc -l)
+              echo "  ${HT}: ${N} month dirs"
+            done
           fi
 
       - name: Upload artifacts
