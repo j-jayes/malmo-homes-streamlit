@@ -8,8 +8,8 @@ name: Collect Sold Property Links (Historical Backfill)
 # Strategy:
 #   For each month M in [start_month, end_month]:
 #     Run collect_sold_links.py --sold-min YYYY-MM-01 --sold-max NEXT-MM-01
-#     Output dir: data/raw/area_ranges_national/YYYYMM/
-#     Consolidate into data/raw/sold_properties_all_areas.csv
+#     Output dir: data/raw/sold_links/YYYYMM/
+#     Consolidate into data/raw/sold_links/sold_properties_all_areas.csv
 #     Commit + push
 #
 # This ensures month × area partitioning — mathematically guaranteed to
@@ -208,7 +208,7 @@ jobs:
                   key      = entry["key"]        # e.g. "202403"
                   sold_min = entry["sold_min"]   # e.g. "2024-03-01"
                   sold_max = entry["sold_max"]   # e.g. "2024-04-01"
-                  out_dir  = f"data/raw/area_ranges_national/{housing_type}/{key}"
+                  out_dir  = f"data/raw/sold_links/{housing_type}/{key}"
 
                   print(f"\n{'='*70}")
                   print(f"MONTH {key} ({housing_type}): {sold_min} → {sold_max}")
@@ -270,8 +270,8 @@ jobs:
 
                   # Commit after each month (enables resume on timeout)
                   subprocess.run(["git", "add",
-                      f"data/raw/area_ranges_national/{housing_type}/{key}/",
-                      "data/raw/sold_properties_all_areas.csv",
+                      f"data/raw/sold_links/{housing_type}/{key}/",
+                      "data/raw/sold_links/sold_properties_all_areas.csv",
                       "data/.hemnet_session.json",
                   ], check=False)
                   diff = subprocess.run(["git", "diff", "--staged", "--quiet"])
@@ -290,12 +290,12 @@ jobs:
       - name: Final check
         if: always()
         run: |
-          if [ -f "data/raw/sold_properties_all_areas.csv" ]; then
-            TOTAL=$(tail -n +2 data/raw/sold_properties_all_areas.csv | wc -l)
+          if [ -f "data/raw/sold_links/sold_properties_all_areas.csv" ]; then
+            TOTAL=$(tail -n +2 data/raw/sold_links/sold_properties_all_areas.csv | wc -l)
             echo "Total unique property links in master CSV: $TOTAL"
           fi
-          if [ -d "data/raw/area_ranges_national" ]; then
-            MONTHS=$(ls -d data/raw/area_ranges_national/*/ 2>/dev/null | wc -l)
+          if [ -d "data/raw/sold_links" ]; then
+            MONTHS=$(ls -d data/raw/sold_links/*/ 2>/dev/null | wc -l)
             echo "Month directories scraped: $MONTHS"
           fi
 
@@ -305,8 +305,8 @@ jobs:
         with:
           name: backfill-sold-links-${{ github.run_id }}
           path: |
-            data/raw/area_ranges_national/
-            data/raw/sold_properties_all_areas.csv
+            data/raw/sold_links/
+            data/raw/sold_links/sold_properties_all_areas.csv
           retention-days: 30
 
       - name: Create issue on failure

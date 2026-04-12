@@ -124,7 +124,7 @@ jobs:
         run: |
           source .venv/bin/activate
           RUN_DATE="$(date -u +%Y%m%d)"
-          BATCH_DIR="data/processed/active_listings/batches_${RUN_DATE}"
+          BATCH_DIR="data/processed/active_details/batches_${RUN_DATE}"
           if [ -d "$BATCH_DIR" ]; then
             echo "Clearing existing batch dir for rerun safety: $BATCH_DIR"
             rm -rf "$BATCH_DIR"
@@ -138,6 +138,8 @@ jobs:
             --max-pages "$INPUT_MAX_PAGES" \
             --max-records "$INPUT_MAX_RECORDS" \
             --batch-size "$INPUT_BATCH_SIZE" \
+            --links-dir "data/raw/active_links" \
+            --batches-dir "data/processed/active_details" \
             --headless \
             --log-level "$INPUT_LOG_LEVEL" \
             --git-commit-interval 50 \
@@ -188,9 +190,8 @@ jobs:
       - name: Pull and commit
         run: |
           git pull --rebase --autostash || true
-          # Explicitly add and commit active listings (parquet files must not be ignored)
-          git add -f data/processed/active_listings/links_*.parquet || true
-          git add -f data/processed/active_listings/batches_* || true
+          git add -f data/raw/active_links/links_*.parquet || true
+          git add -f data/processed/active_details/batches_* || true
           if ! git diff --cached --quiet; then
             git commit -m "data: active listings snapshot ${{ github.run_number }}" --no-verify || true
             git push || true
@@ -202,7 +203,8 @@ jobs:
         with:
           name: active-listings-${{ github.run_number }}
           path: |
-            data/processed/active_listings/
+            data/raw/active_links/
+            data/processed/active_details/
             /tmp/xvfb.log
           retention-days: 7
 

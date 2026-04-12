@@ -25,7 +25,8 @@ from sklearn.preprocessing import OrdinalEncoder
 
 logger = logging.getLogger(__name__)
 
-PARQUET_GLOB = "data/processed/property_details/gha_runs/*/batch_*.parquet"
+# Covers both legacy path (property_details/gha_runs) and new path (sold_details)
+PARQUET_GLOB = "data/processed/**/batch_*.parquet"
 
 NUMERIC_FEATURES = [
     "rooms",

@@ -1,7 +1,7 @@
 """Backfill the description archive from existing active listing Parquet files.
 
 One-time script to seed the ``description_archive`` table with any
-descriptions already captured in the ``data/processed/active_listings``
+descriptions already captured in the ``data/processed/active_details``
 directory.
 
 Usage::
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "database" / "properties.duckdb"
-ACTIVE_DIR = PROJECT_ROOT / "data" / "processed" / "active_listings"
+ACTIVE_DIR = PROJECT_ROOT / "data" / "processed" / "active_details"
 
 
 def main() -> None:

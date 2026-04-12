@@ -133,7 +133,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-pages", type=int, default=50, help="Search result pages to crawl (Hemnet max=50)")
     parser.add_argument("--max-records", type=int, default=0, help="Max detail pages to scrape (0=all)")
     parser.add_argument("--batch-size", type=int, default=10)
-    parser.add_argument("--output-dir", type=Path, default=Path("data/processed/active_listings"))
+    parser.add_argument("--links-dir", type=Path, default=Path("data/raw/active_links"),
+                        help="Directory for daily link snapshot Parquets")
+    parser.add_argument("--batches-dir", type=Path, default=Path("data/processed/active_details"),
+                        help="Root directory for per-day detail batch Parquets")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--predict", action="store_true", help="Run ML predictions after aggregation")
@@ -155,12 +158,14 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging(args.log_level)
 
     headless = args.headless and not args.show_browser
-    output_dir = args.output_dir.expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    links_dir = args.links_dir.expanduser().resolve()
+    links_dir.mkdir(parents=True, exist_ok=True)
+    batches_root = args.batches_dir.expanduser().resolve()
+    batches_root.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d")
-    links_path = output_dir / f"links_{timestamp}.parquet"
-    batches_dir = output_dir / f"batches_{timestamp}"
+    links_path = links_dir / f"links_{timestamp}.parquet"
+    batches_dir = batches_root / f"batches_{timestamp}"
 
     # Step 1: Collect links
     if not args.skip_collect:

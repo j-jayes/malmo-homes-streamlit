@@ -24,7 +24,7 @@ Usage::
     # Backfill: one calendar month, area-partitioned
     python scripts/collect_sold_links.py \\
         --sold-min 2024-03-01 --sold-max 2024-04-01 \\
-        --output-dir data/raw/area_ranges_national/202403 \\
+        --output-dir data/raw/sold_links/bostadsratt/202403 \\
         --headless
 
     # Single city, all time
@@ -80,7 +80,7 @@ class AdaptiveAreaScraper:
         self.sold_max = sold_max
         self.housing_type = housing_type
         self.scraper = SoldPropertiesScraper(headless=headless, slow_mo=0 if headless else 100, housing_type=housing_type)
-        self.output_dir = output_dir or Path("data/raw/area_ranges")
+        self.output_dir = output_dir or Path("data/raw/sold_links")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.progress_file = self.output_dir / "progress.json"
@@ -302,7 +302,7 @@ class AdaptiveAreaScraper:
         """
         import csv
 
-        output_file = output_file or Path("data/raw/sold_properties_all_areas.csv")
+        output_file = output_file or Path("data/raw/sold_links/sold_properties_all_areas.csv")
         logger.info("Consolidating results…")
 
         # Read all per-range CSV files (including any subdirectories)
@@ -376,7 +376,7 @@ def main() -> None:
     if args.sold_max and not args.sold_min:
         parser.error("--sold-min is required when using --sold-max")
 
-    output_dir = Path(args.output_dir) if args.output_dir else Path("data/raw/area_ranges")
+    output_dir = Path(args.output_dir) if args.output_dir else Path("data/raw/sold_links")
 
     scraper = AdaptiveAreaScraper(
         location_id=args.location_id,

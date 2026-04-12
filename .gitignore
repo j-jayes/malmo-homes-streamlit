@@ -172,24 +172,43 @@ cython_debug/
 
 # Project-specific ignores
 
-# Data files (large - keep raw CSVs under 10MB, exclude larger files)
-# data/raw/*.csv  # Commented out - we want to track scraped CSVs
-data/raw/*.json
-!data/.hemnet_session.json  # Keep session file for Cloudflare
-data/raw/*.parquet
-# NOTE: We track active listings parquet files in git, so don't ignore them:
-# data/processed/*.parquet  # Commented out - we track active listings here
-# Instead, we selectively ignore parquet files in subdirectories:
-data/processed/*/*.parquet
-!data/processed/active_listings/*.parquet  # TRACK active listings - these are the daily scrapes from Hemnet
+# ── Data directory rules ────────────────────────────────────────────────────
+# Ignore DuckDB (rebuilt from scraped Parquets at any time)
 data/database/*.duckdb
 data/database/*.db
+
+# Ignore raw JSON files except the Hemnet session cookie
+data/raw/*.json
+!data/.hemnet_session.json
+
+# ── data/raw/sold_links/  ──────────────────────────────────────────────────
+# Track all sold-link CSV manifests and progress files (they are small)
+# No explicit rules needed — nothing under raw/ is ignored by default
+
+# ── data/raw/active_links/  ───────────────────────────────────────────────
+# Track daily active listing link snapshots (Parquet)
+# No explicit rules needed — raw/active_links/*.parquet are not ignored
+
+# ── data/processed/active_details/  ──────────────────────────────────────
+# Track per-day active listing detail batches (Parquet + failure CSVs)
+# The old data/processed/*/*.parquet rule is removed; nothing blocks these
+
+# ── data/processed/sold_details/  (new path for GHA sold detail runs) ─────
+# Track all GHA sold detail run directories
+!data/processed/sold_details/
+!data/processed/sold_details/**
+
+# ── data/processed/property_details/  (LEGACY — 1.25M files, already in git) ──
+# Keep tracking old gha_runs data as-is; new runs go to sold_details/ above
 !data/processed/property_details/
 !data/processed/property_details/gha_runs/
 !data/processed/property_details/gha_runs/**
 
-# Keep example files
+# Keep placeholder files
 !data/raw/.gitkeep
+!data/raw/sold_links/.gitkeep
+!data/raw/active_links/.gitkeep
+!data/raw/legacy/.gitkeep
 !data/processed/.gitkeep
 !data/external/.gitkeep
 !data/database/.gitkeep
@@ -209,8 +228,11 @@ reports/figures/*.jpg
 reports/figures/*.svg
 !reports/figures/.gitkeep
 
-# Archive
+# Archive (deleted — git history preserves old scrapers)
 archive/
+
+# Notebook training artefacts (regenerated on retrain)
+notebooks/catboost_info/
 
 # Playwright
 .playwright/

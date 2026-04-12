@@ -136,7 +136,7 @@ def aggregate_data(
 
 def main():
     parser = argparse.ArgumentParser(description="Aggregate property data to DuckDB")
-    parser.add_argument("--input", "-i", type=Path, default=Path("data/processed/property_details/gha_runs"), help="Input directory containing Parquet files")
+    parser.add_argument("--input", "-i", type=Path, default=Path("data/processed/sold_details"), help="Input directory containing Parquet files")
     parser.add_argument("--db", "-d", type=Path, default=Path("data/database/properties.duckdb"), help="Path to DuckDB database")
     parser.add_argument("--recreate", action="store_true", help="Recreate table from scratch")
     

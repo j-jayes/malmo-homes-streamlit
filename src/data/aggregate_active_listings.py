@@ -10,7 +10,7 @@ frontend can display predicted-vs-asking price comparisons.
 Usage::
 
     python -m src.data.aggregate_active_listings
-    python -m src.data.aggregate_active_listings --input data/processed/active_listings --predict
+    python -m src.data.aggregate_active_listings --input data/processed/active_details --predict
 """
 
 from __future__ import annotations
@@ -327,7 +327,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--input", "-i",
         type=Path,
-        default=Path("data/processed/active_listings"),
+        default=Path("data/processed/active_details"),
     )
     parser.add_argument(
         "--db", "-d",

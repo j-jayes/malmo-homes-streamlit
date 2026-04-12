@@ -15,7 +15,7 @@ on:
       source_csv:
         description: 'CSV file with property URLs'
         required: false
-        default: data/raw/sold_properties_all_areas.csv
+        default: data/raw/sold_links/sold_properties_all_areas.csv
         type: string
       max_records:
         description: 'Max records to scrape (0 = all unprocessed)'
@@ -59,11 +59,11 @@ jobs:
     timeout-minutes: 350
     env:
       PYTHONUNBUFFERED: "1"
-      SCRAPE_OUTPUT: data/gha_property_batches
+      SCRAPE_OUTPUT: data/tmp/property_batches
       SUBSET_CSV: data/tmp/gha_property_subset.csv
-      PROCESSED_ROOT: data/processed/property_details/gha_runs
-      RUN_INDEX: data/processed/property_details/gha_runs/index.jsonl
-      INPUT_SOURCE_CSV: ${{ inputs.source_csv || 'data/raw/sold_properties_all_areas.csv' }}
+      PROCESSED_ROOT: data/processed/sold_details
+      RUN_INDEX: data/processed/sold_details/index.jsonl
+      INPUT_SOURCE_CSV: ${{ inputs.source_csv || 'data/raw/sold_links/sold_properties_all_areas.csv' }}
       INPUT_OFFSET: ${{ inputs.offset || 0 }}
       INPUT_MAX_RECORDS: ${{ inputs.max_records || 0 }}
       INPUT_BATCH_SIZE: ${{ inputs.batch_size || 5 }}
@@ -72,7 +72,7 @@ jobs:
       HEMNET_DETAIL_MIN_DELAY_SECONDS: 4
       HEMNET_DETAIL_MAX_DELAY_SECONDS: 8
       PROPERTY_DETAIL_COMMIT_INTERVAL: 20
-      PROGRESS_CACHE: data/processed/property_details/progress_cache.json
+      PROGRESS_CACHE: data/processed/sold_details/progress_cache.json
 
     steps:
       - name: Checkout repository
@@ -251,7 +251,7 @@ jobs:
           commit_message: "data: property details ${{ steps.run_timestamp.outputs.utc }}"
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
-          file_pattern: 'data/processed/property_details/**'
+          file_pattern: 'data/processed/sold_details/**'
           commit_options: '--no-verify'
 
       - name: Upload artifacts
