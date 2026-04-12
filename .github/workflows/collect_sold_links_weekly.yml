@@ -36,6 +36,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: collect-sold-links-weekly
@@ -103,9 +104,8 @@ jobs:
         run: |
           RUN_DATE="$(date -u +%Y%m%d)"
           echo "RUN_DATE=$RUN_DATE" >> $GITHUB_ENV
-          echo "WEEKLY_OUTPUT=data/raw/area_ranges_national/${RUN_DATE}" >> $GITHUB_ENV
 
-      - name: Collect sold links (area-adaptive)
+      - name: Collect sold links (all housing types, area-adaptive)
         id: scrape
         env:
           DISPLAY: ${{ env.DISPLAY }}
@@ -124,18 +124,24 @@ jobs:
             EXTRA="--max-pages 50 --min-area 0 --max-area 500"
           fi
 
-          python scripts/collect_sold_links.py \
-            --sold-age $INPUT_SOLD_AGE \
-            --output-dir "$WEEKLY_OUTPUT" \
-            --headless \
-            $EXTRA \
-            $LOCATION_FLAG || {
-              echo "Scraping failed — committing partial progress"
-              git add "data/raw/area_ranges_national/$RUN_DATE/" data/.hemnet_session.json 2>/dev/null || true
-              git diff --staged --quiet || git commit -m "data: partial weekly sold links (failed)"
-              git push || true
-              exit 1
-            }
+          FAILED_TYPES=""
+          for HOUSING_TYPE in bostadsratt villa radhus fritidshus tomt gard; do
+            echo "=== Collecting: $HOUSING_TYPE ==="
+            OUT_DIR="data/raw/area_ranges_national/${HOUSING_TYPE}/${RUN_DATE}"
+            python scripts/collect_sold_links.py \
+              --housing-type "$HOUSING_TYPE" \
+              --sold-age $INPUT_SOLD_AGE \
+              --output-dir "$OUT_DIR" \
+              --headless \
+              $EXTRA \
+              $LOCATION_FLAG || {
+                echo "WARNING: $HOUSING_TYPE scrape failed — committing partial and continuing"
+                FAILED_TYPES="$FAILED_TYPES $HOUSING_TYPE"
+              }
+          done
+          if [ -n "$FAILED_TYPES" ]; then
+            echo "The following types had scrape failures:$FAILED_TYPES"
+          fi
 
       - name: Consolidate into master CSV
         run: |
@@ -144,7 +150,7 @@ jobs:
           import pandas as pd
           from pathlib import Path
 
-          # Collect all per-range CSVs from ALL dated run subdirectories
+          # Collect all per-range CSVs from ALL housing type / dated run subdirectories
           new_files = list(Path("data/raw/area_ranges_national").rglob("properties_*.csv"))
           if not new_files:
               print("No range CSV files found")
@@ -159,18 +165,21 @@ jobs:
               combined = new_df.drop_duplicates(subset=["property_id"])
 
           combined.to_csv(main_file, index=False)
+          by_type = combined.groupby("housing_type").size().to_dict() if "housing_type" in combined.columns else {}
           print(f"Master CSV updated: {len(combined)} unique property links")
+          for ht, n in sorted(by_type.items()):
+              print(f"  {ht}: {n}")
           PY
 
       - name: Push results
         run: |
-          git pull origin main || true
+          git pull --rebase origin main || true
           git add \
-            "data/raw/area_ranges_national/$RUN_DATE/" \
+            "data/raw/area_ranges_national/" \
             data/raw/sold_properties_all_areas.csv \
             data/.hemnet_session.json 2>/dev/null || true
           if ! git diff --staged --quiet; then
-            git commit -m "data: weekly sold links ${RUN_DATE} (sold_age=${INPUT_SOLD_AGE})"
+            git commit -m "data: weekly sold links ${RUN_DATE} all-types (sold_age=${INPUT_SOLD_AGE})"
             git push
           else
             echo "No new data to commit"
@@ -179,14 +188,18 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## Weekly Sold Links Collection" >> $GITHUB_STEP_SUMMARY
+          echo "## Weekly Sold Links Collection (all housing types)" >> $GITHUB_STEP_SUMMARY
           if [ -f "data/raw/sold_properties_all_areas.csv" ]; then
             TOTAL=$(tail -n +2 data/raw/sold_properties_all_areas.csv | wc -l)
             echo "- **Total links in master CSV**: $TOTAL" >> $GITHUB_STEP_SUMMARY
           fi
-          if [ -f "data/raw/area_ranges_national/$RUN_DATE/progress.json" ]; then
-            echo "- **Ranges completed this run**: $(jq '.completed_ranges | length' data/raw/area_ranges_national/$RUN_DATE/progress.json)" >> $GITHUB_STEP_SUMMARY
-          fi
+          for HOUSING_TYPE in bostadsratt villa radhus fritidshus tomt gard; do
+            PROG="data/raw/area_ranges_national/${HOUSING_TYPE}/${RUN_DATE}/progress.json"
+            if [ -f "$PROG" ]; then
+              N=$(jq '.completed_ranges | length' "$PROG")
+              echo "- **${HOUSING_TYPE} ranges completed**: $N" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
 
       - name: Upload artifacts
         if: always()
@@ -194,7 +207,7 @@ jobs:
         with:
           name: weekly-sold-links-${{ github.run_id }}
           path: |
-            data/raw/area_ranges_national/${{ env.RUN_DATE }}/
+            data/raw/area_ranges_national/**/${{ env.RUN_DATE }}/
             data/raw/sold_properties_all_areas.csv
           retention-days: 14
 

@@ -50,9 +50,16 @@ on:
         required: false
         type: boolean
         default: false
+      housing_type:
+        description: 'Housing type to backfill ("all" runs all 6 types in sequence)'
+        required: false
+        type: choice
+        options: [all, bostadsratt, villa, radhus, fritidshus, tomt, gard]
+        default: 'all'
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: collect-sold-links-backfill
@@ -71,6 +78,7 @@ jobs:
       INPUT_INITIAL_STEP: ${{ inputs.initial_step || 50 }}
       INPUT_MAX_PAGES: ${{ inputs.max_pages || 50 }}
       INPUT_TEST_MODE: ${{ inputs.test_mode || 'false' }}
+      INPUT_HOUSING_TYPE: ${{ inputs.housing_type || 'all' }}
 
     steps:
       - name: Checkout repository
@@ -187,89 +195,94 @@ jobs:
           pages_flag = os.environ.get("INPUT_MAX_PAGES", "50")
           test_mode = os.environ.get("INPUT_TEST_MODE", "false").lower() == "true"
 
-          for entry in months:
-              key      = entry["key"]        # e.g. "202403"
-              sold_min = entry["sold_min"]   # e.g. "2024-03-01"
-              sold_max = entry["sold_max"]   # e.g. "2024-04-01"
-              out_dir  = f"data/raw/area_ranges_national/{key}"
-              master   = "data/raw/sold_properties_all_areas.csv"
+          ALL_TYPES = ["bostadsratt", "villa", "radhus", "fritidshus", "tomt", "gard"]
+          requested_type = os.environ.get("INPUT_HOUSING_TYPE", "all")
+          types_to_run = ALL_TYPES if requested_type == "all" else [requested_type]
 
-              print(f"\n{'='*70}")
-              print(f"MONTH {key}: {sold_min} → {sold_max}")
-              print(f"{'='*70}")
+          for housing_type in types_to_run:
+              print(f"\n{'#'*70}")
+              print(f"HOUSING TYPE: {housing_type}")
+              print(f"{'#'*70}")
 
-              # Skip if already done (progress.json has a completed range ending at >= target_max)
-              progress_file = Path(out_dir) / "progress.json"
-              skip_scrape = False
-              target_max = 85 if test_mode else 500
-              
-              if progress_file.exists():
-                  import json as _json
-                  try:
-                      prog = _json.loads(progress_file.read_text())
-                      ranges = prog.get("completed_ranges", [])
-                      done = len(ranges)
-                      if done > 0:
-                          # Check if the highest max matches our target limit
-                          highest_max = 0
-                          for r in ranges:
-                              try:
-                                  _, r_max = map(int, r.split("-"))
-                                  highest_max = max(highest_max, r_max)
-                              except ValueError:
-                                  pass
-                          
-                          if highest_max >= target_max:
-                              print(f"  Already has {done} completed ranges reaching {highest_max}m² — skipping scrape (reusing)")
-                              skip_scrape = True
-                  except Exception:
-                      pass
+              for entry in months:
+                  key      = entry["key"]        # e.g. "202403"
+                  sold_min = entry["sold_min"]   # e.g. "2024-03-01"
+                  sold_max = entry["sold_max"]   # e.g. "2024-04-01"
+                  out_dir  = f"data/raw/area_ranges_national/{housing_type}/{key}"
 
-              if not skip_scrape:
-                  cmd = [
+                  print(f"\n{'='*70}")
+                  print(f"MONTH {key} ({housing_type}): {sold_min} → {sold_max}")
+                  print(f"{'='*70}")
+
+                  # Skip if already done (progress.json has a completed range ending at >= target_max)
+                  progress_file = Path(out_dir) / "progress.json"
+                  skip_scrape = False
+                  target_max = 85 if test_mode else 500
+
+                  if progress_file.exists():
+                      import json as _json
+                      try:
+                          prog = _json.loads(progress_file.read_text())
+                          ranges = prog.get("completed_ranges", [])
+                          done = len(ranges)
+                          if done > 0:
+                              highest_max = 0
+                              for r in ranges:
+                                  try:
+                                      _, r_max = map(int, r.split("-"))
+                                      highest_max = max(highest_max, r_max)
+                                  except ValueError:
+                                      pass
+                              if highest_max >= target_max:
+                                  print(f"  Already has {done} completed ranges reaching {highest_max}m² — skipping (reusing)")
+                                  skip_scrape = True
+                      except Exception:
+                          pass
+
+                  if not skip_scrape:
+                      cmd = [
+                          venv_python, "scripts/collect_sold_links.py",
+                          "--housing-type", housing_type,
+                          "--sold-min", sold_min,
+                          "--sold-max", sold_max,
+                          "--output-dir", out_dir,
+                          "--initial-step", step_flag,
+                          "--max-pages", pages_flag,
+                          "--headless",
+                      ]
+                      if test_mode:
+                          cmd += ["--min-area", "80", "--max-area", "85"]
+                      if location_flag:
+                          cmd += ["--location-id", location_flag]
+
+                      print(f"Running: {' '.join(cmd)}")
+                      result = subprocess.run(cmd)
+                      if result.returncode != 0:
+                          print(f"  WARNING: scraper exited {result.returncode} — committing partial and continuing")
+
+                  # Consolidate this month's output into master CSV
+                  consolidate_cmd = [
                       venv_python, "scripts/collect_sold_links.py",
-                      "--sold-min", sold_min,
-                      "--sold-max", sold_max,
+                      "--consolidate-only",
                       "--output-dir", out_dir,
-                      "--initial-step", step_flag,
-                      "--max-pages", pages_flag,
-                      "--headless",
                   ]
-                  if test_mode:
-                      cmd += ["--min-area", "80", "--max-area", "85"]
+                  subprocess.run(consolidate_cmd, check=False)
 
-                  if location_flag:
-                      cmd += ["--location-id", location_flag]
-
-                  print(f"Running: {' '.join(cmd)}")
-                  result = subprocess.run(cmd)
-
-                  if result.returncode != 0:
-                      print(f"  WARNING: scraper exited {result.returncode} — committing partial and continuing")
-
-              # Consolidate this month's output into master CSV
-              consolidate_cmd = [
-                  venv_python, "scripts/collect_sold_links.py",
-                  "--consolidate-only",
-                  "--output-dir", out_dir,
-              ]
-              subprocess.run(consolidate_cmd, check=False)
-
-              # Commit after each month (enables resume on timeout)
-              subprocess.run(["git", "add",
-                  f"data/raw/area_ranges_national/{key}/",
-                  "data/raw/sold_properties_all_areas.csv",
-                  "data/.hemnet_session.json",
-              ], check=False)
-              diff = subprocess.run(["git", "diff", "--staged", "--quiet"])
-              if diff.returncode != 0:
-                  subprocess.run(["git", "commit", "-m",
-                      f"data: backfill sold links for {key} ({sold_min}–{sold_max})"],
-                      check=True)
-                  subprocess.run(["git", "push"], check=True)
-                  print(f"  Committed month {key}")
-              else:
-                  print(f"  No new data for {key}")
+                  # Commit after each month (enables resume on timeout)
+                  subprocess.run(["git", "add",
+                      f"data/raw/area_ranges_national/{housing_type}/{key}/",
+                      "data/raw/sold_properties_all_areas.csv",
+                      "data/.hemnet_session.json",
+                  ], check=False)
+                  diff = subprocess.run(["git", "diff", "--staged", "--quiet"])
+                  if diff.returncode != 0:
+                      subprocess.run(["git", "commit", "-m",
+                          f"data: backfill sold links {housing_type}/{key} ({sold_min}–{sold_max})"],
+                          check=True)
+                      subprocess.run(["git", "push"], check=True)
+                      print(f"  Committed {housing_type}/{key}")
+                  else:
+                      print(f"  No new data for {housing_type}/{key}")
 
           print("\nBackfill loop complete.")
           PY

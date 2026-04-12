@@ -149,6 +149,10 @@ class BatchManager:
             
             for row in raw_urls:
                 if 'url' in row:
+                    row_url = str(row.get('url') or '').strip()
+                    if not row_url:
+                        continue
+                    row['url'] = row_url
                     if self.progress_tracker and self.progress_tracker.should_skip(row):
                         skipped += 1
                         continue

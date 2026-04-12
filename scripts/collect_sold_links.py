@@ -72,12 +72,14 @@ class AdaptiveAreaScraper:
         sold_age: Optional[str] = None,
         sold_min: Optional[str] = None,
         sold_max: Optional[str] = None,
+        housing_type: str = "bostadsratt",
     ) -> None:
         self.location_id = location_id
         self.sold_age = sold_age
         self.sold_min = sold_min
         self.sold_max = sold_max
-        self.scraper = SoldPropertiesScraper(headless=headless, slow_mo=0 if headless else 100)
+        self.housing_type = housing_type
+        self.scraper = SoldPropertiesScraper(headless=headless, slow_mo=0 if headless else 100, housing_type=housing_type)
         self.output_dir = output_dir or Path("data/raw/area_ranges")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -337,6 +339,9 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    parser.add_argument("--housing-type", default="bostadsratt",
+                        choices=["bostadsratt", "villa", "radhus", "fritidshus", "tomt", "gard"],
+                        help="Hemnet housing type slug (default: bostadsratt)")
     parser.add_argument("--location-id", default="",
                         help="Hemnet location ID (default: '' = all Sweden)")
     parser.add_argument("--initial-step", type=int, default=50,
@@ -380,6 +385,7 @@ def main() -> None:
         sold_age=args.sold_age,
         sold_min=args.sold_min,
         sold_max=args.sold_max,
+        housing_type=args.housing_type,
     )
 
     if args.consolidate_only:

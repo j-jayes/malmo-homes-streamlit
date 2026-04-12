@@ -54,9 +54,9 @@ def collect_links(
     """
     from src.scrapers.link_collector import scrape_multiple_pages, save_links_to_parquet
 
-    base_url = "https://www.hemnet.se/bostader?item_types=bostadsratt"
+    base_url = "https://www.hemnet.se/bostader"
     if location_id:
-        base_url += f"&expand_locations=10000&location_ids={location_id}"
+        base_url += f"?expand_locations=10000&location_ids={location_id}"
     scope = location_id or "all-Sweden"
     logger.info("Collecting active listing links (scope=%s, max_pages=%s)", scope, max_pages)
     results = scrape_multiple_pages(base_url, max_pages=max_pages, headless=headless)

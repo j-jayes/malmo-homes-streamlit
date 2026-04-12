@@ -31,10 +31,11 @@ class SoldPropertiesScraper:
     BASE_URL = "https://www.hemnet.se/salda/bostader"
     SESSION_FILE = "data/.hemnet_session.json"
     
-    def __init__(self, headless: bool = False, slow_mo: int = 100):
+    def __init__(self, headless: bool = False, slow_mo: int = 100, housing_type: str = "bostadsratt"):
         self.headless = headless
         self.slow_mo = slow_mo
         self.session_cookies = None
+        self.housing_type = housing_type
         
     def _setup_browser_context(self, browser) -> BrowserContext:
         """Create browser context with stealth settings"""
@@ -193,7 +194,7 @@ class SoldPropertiesScraper:
                 context = self._setup_browser_context(browser)
                 page = context.new_page()
 
-                url = f"{self.BASE_URL}?item_types[]=bostadsratt&living_area_min={area_min}&living_area_max={area_max}"
+                url = f"{self.BASE_URL}?item_types[]={self.housing_type}&living_area_min={area_min}&living_area_max={area_max}"
                 if location_id:
                     url += f"&location_ids[]={location_id}"
                 # Explicit date range takes precedence over relative sold_age window
@@ -265,7 +266,7 @@ class SoldPropertiesScraper:
                 page = context.new_page()
 
                 # Build URL with living area filter
-                url = f"{self.BASE_URL}?item_types[]=bostadsratt&living_area_min={area_min}&living_area_max={area_max}"
+                url = f"{self.BASE_URL}?item_types[]={self.housing_type}&living_area_min={area_min}&living_area_max={area_max}"
                 if location_id:
                     url += f"&location_ids[]={location_id}"
                 # Explicit date range takes precedence over relative sold_age window
@@ -326,6 +327,7 @@ class SoldPropertiesScraper:
                     'property_id': link.split('-')[-1],
                     'url': link,
                     'area_range': area_str,
+                    'housing_type': self.housing_type,
                     'scraped_at': datetime.now().isoformat()
                 } for link in unique_links]
                 
@@ -391,7 +393,7 @@ class SoldPropertiesScraper:
                 sold_max = f"{next_month_year}-{next_month:02d}-01"
                 
                 # Build URL with date filter - MUST include sold_age=all to enable date filtering
-                url = f"{self.BASE_URL}?item_types[]=bostadsratt&location_ids[]={location_id}&sold_age=all&sold_min={sold_min}&sold_max={sold_max}"
+                url = f"{self.BASE_URL}?item_types[]={self.housing_type}&location_ids[]={location_id}&sold_age=all&sold_min={sold_min}&sold_max={sold_max}"
                 
                 logger.info(f"Navigating to: {url}")
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)

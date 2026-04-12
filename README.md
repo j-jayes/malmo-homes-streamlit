@@ -41,18 +41,19 @@ A comprehensive data pipeline and analytics platform for tracking and analyzing 
 This project has **two distinct components** that work together:
 
 ### 🏛️ Component 1: Historical Market Analysis
-**One-time backfill of sold properties** to build a comprehensive historical database:
-- Scrape all sold properties (~56k properties dating back to 2020)
+**Backfill of sold properties across all housing types** to build a comprehensive historical database:
+- Covers all 6 Hemnet housing types: apartments (`bostadsratt`), detached houses (`villa`), townhouses (`radhus`), vacation homes (`fritidshus`), land plots (`tomt`), and farms/estates (`gard`)
+- National scope — all of Sweden
+- Historical backfill: 2020 onwards (apartments complete; other types in progress)
 - Build baseline for price trends and neighborhood analysis
 - Train ML models on historical sales data
-- Provides context for current market evaluation
 
 ### 🔄 Component 2: Live Market Monitoring
-**Ongoing tracking of active listings** to identify opportunities:
-- Weekly scraping of new listings (~1,500 active properties)
+**Ongoing tracking of active listings across all housing types** to identify opportunities:
+- Daily scraping of all active property types listed on Hemnet nationally
+- Weekly collection of newly sold links across all 6 housing types
 - Track property lifecycle (listed → price changes → sold)
 - Identify underpriced properties based on historical trends
-- Alert on price drops and market anomalies
 - Compare asking prices to predicted fair value
 
 ### 🔗 The Connection
@@ -306,30 +307,61 @@ uvicorn app.main:app --reload
 
 ### GitHub Actions Workflows
 
-**Weekly Active Listing Orchestrator** (e.g., `scrape_active_listings.yml`):
-- Operates automatically to collect property descriptions globally.
-- Updates DuckDB with daily snapshots and stores copies of property listings before they are sold and anonymized.
+| Workflow | Schedule | Description |
+|---|---|---|
+| `collect_active_listings_daily.yml` | Daily 06:00 UTC | Collects all active listings (all housing types) nationally; runs ML predictions |
+| `collect_sold_links_weekly.yml` | Sunday 02:00 UTC | Collects newly-sold links (all 6 housing types) across Sweden for the past month |
+| `collect_sold_links_backfill.yml` | Every 8h + manual | Historical backfill of sold links; loops housing types × months; resumes via `progress.json` |
+| `collect_property_details_scheduled.yml` | 00:30 + 12:30 UTC | Scrapes full property detail pages for all collected links; updates DuckDB |
 
-**Weekly National Recent Sold Scrape** (`scrape_sold_weekly_national.yml`):
-- Runs every Sunday at 02:00 UTC.
-- Targets recent sales exclusively (past 1 month) across all of Sweden setting `--sold-age 1m`.
-- Appends new properties to the central manifest so the detail runner captures them accurately.
+#### Active listings pipeline (`collect_active_listings_daily.yml`)
+- Fetches all current Hemnet listings nationally with no `item_types` filter — all housing types are returned in one pass.
+- The detail scraper extracts `housing_type` from each property's page JSON, so every record in the `active_listings` DuckDB table carries its correct type.
 
-#### Historical backfill cadence (2025/2026 refresh)
-- `scrape_sold_batch.yml` runs batch routines adaptively splitting large property clusters into digestible bounds (to avoid Hemnet's 2,500 result limit), staying within the 6-hour GitHub-hosted runner window, and resuming cleanly from `progress.json`.
-- `property_detail_runner.yml` is the primary workhorse, extracting interior layout details after links are staged. It skips parsed fingerprints in `progress_cache.jsonl` and auto-commits directly to Parquet and DuckDB.
-- **Auto NLP cross-matching:** The backend matches archived active-listing descriptions to their closing properties via `scripts/match_active_to_sold.py` inside the detail runner automatically.
-- Both workflows use concurrency groups, so a delayed run queues instead of overlapping, and they respect polite scraping delays (`HEMNET_SOLD_MIN/MAX_DELAY_SECONDS`).
+#### Sold links collection (weekly + backfill)
+Both workflows use `scripts/collect_sold_links.py --housing-type <slug>` which sets `item_types[]=<slug>` in the Hemnet search URL.
+
+**Weekly** (`collect_sold_links_weekly.yml`): loops over all 6 types, each writing to `data/raw/area_ranges_national/{housing_type}/{YYYYMMDD}/`. Results are consolidated into `data/raw/sold_properties_all_areas.csv` with a `housing_type` column.
+
+**Backfill** (`collect_sold_links_backfill.yml`): outer loop over housing types × inner loop over calendar months. Set `housing_type=all` (default) to run all types, or select a single type to resume a specific backfill. Each month is committed independently for resumability. Output: `data/raw/area_ranges_national/{housing_type}/{YYYYMM}/`.
+
+Area partitioning (Hemnet's 2,500-result limit): the adaptive binary-search strategy applies to all housing types. For low-volume types (`tomt`, `gard`) the algorithm finds the full 0–500 m² band is safe and makes a single request; for high-volume types (`bostadsratt`, `villa`) it narrows bands as needed.
+
+#### Property detail scraper (`collect_property_details_scheduled.yml`)
+Reads `data/raw/sold_properties_all_areas.csv` (all types), skips already-processed URLs via a SHA-256 fingerprint cache, and extracts all available fields. Type-specific fields (`plot_area`, `monthly_fee`, etc.) are stored as `Optional` columns and are `null` for types that don't carry them.
+
+### Scraper CLI reference
+
+```bash
+# Backfill one housing type for one month (area-adaptive)
+python scripts/collect_sold_links.py \
+  --housing-type villa \
+  --sold-min 2024-03-01 --sold-max 2024-04-01 \
+  --output-dir data/raw/area_ranges_national/villa/202403 \
+  --headless
+
+# Collect active listings (all types, national)
+python scripts/collect_active_listings.py --predict
+
+# Supported --housing-type values:
+#   bostadsratt  villa  radhus  fritidshus  tomt  gard
+```
 
 ## 🗺️ Coverage
 
-### Current Regions
-- ✅ **Malmö** (Location ID: 17989) (Historical Backfill Complete)
-- ✅ **All of Sweden** (Recent months only via weekly national polling)
-- ✅ **All of Sweden** (Active listings dynamically gathered via country-wide scan)
+### Housing Types
+| Type | Swedish | Backfill status | Active listings |
+|------|---------|-----------------|-----------------|
+| `bostadsratt` | Bostadsrätt (apartment) | ✅ Complete (2020–2025) | ✅ Daily |
+| `villa` | Villa (detached house) | ⏳ In progress | ✅ Daily |
+| `radhus` | Radhus (townhouse) | ⏳ In progress | ✅ Daily |
+| `fritidshus` | Fritidshus (vacation home) | ⏳ In progress | ✅ Daily |
+| `tomt` | Tomt (land/plot) | ⏳ In progress | ✅ Daily |
+| `gard` | Gård (farm/estate) | ⏳ In progress | ✅ Daily |
 
-### Planned Expansion
-- ⏳ Complete historical backfill for Stockholm & Gothenburg
+### Geographic scope
+- ✅ **All of Sweden** — national scope for all workflows (no location filter by default)
+- Location filtering available via `--location-id` for targeted city/region runs
 
 ## 📈 Analytics Features
 

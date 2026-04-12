@@ -24,6 +24,39 @@ from src.models.property_schema import BaseProperty, ForSaleProperty, SoldProper
 logger = logging.getLogger(__name__)
 
 
+def _parse_sek_amount(value: object) -> Optional[int]:
+    """Parse monetary values to integer SEK when possible."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        amount = int(value)
+        if amount <= 0:
+            return None
+        # Some Hemnet money fields occasionally appear in kSEK scale.
+        # Typical sold/list prices below 100k are not realistic in this dataset.
+        if 100 <= amount < 100_000:
+            return amount * 1000
+        return amount
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.strip().replace("\xa0", " ").lower()
+    if not normalized:
+        return None
+
+    # Keep only digits for values like "6 787 000 kr" or "6,787,000 SEK".
+    digits = re.sub(r"[^0-9]", "", normalized)
+    if not digits:
+        return None
+
+    amount = int(digits)
+    if 100 <= amount < 100_000:
+        return amount * 1000
+    return amount if amount > 0 else None
+
+
 def _respectful_sleep(default_min: float = 5.0, default_max: float | None = None) -> None:
     min_seconds = default_min
     max_seconds = default_max if default_max is not None else default_min
@@ -249,7 +282,10 @@ class PropertyScraper:
         
         # Money object
         if data.get('__typename') == 'Money':
-            return data.get('amount')
+            amount = _parse_sek_amount(data.get('amount'))
+            if amount is not None:
+                return amount
+            return _parse_sek_amount(data.get('formatted'))
         
         # Housing form
         if data.get('__typename') == 'HousingForm':
@@ -271,6 +307,10 @@ class PropertyScraper:
         # Generic fallback: look for common value fields
         for key in ['value', 'amount', 'name', 'code', 'label']:
             if key in data:
+                if key in ['value', 'amount']:
+                    parsed = _parse_sek_amount(data[key])
+                    if parsed is not None:
+                        return parsed
                 return data[key]
         
         return data

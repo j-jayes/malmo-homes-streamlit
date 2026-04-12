@@ -77,6 +77,10 @@ def slice_input_subset(
         if skipped < offset:
             skipped += 1
             continue
+        row_url = str(row.get("url") or "").strip()
+        if not row_url:
+            continue
+        row["url"] = row_url
         if tracker and tracker.should_skip(row):
             cache_skipped += 1
             continue

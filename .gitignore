@@ -177,7 +177,11 @@ cython_debug/
 data/raw/*.json
 !data/.hemnet_session.json  # Keep session file for Cloudflare
 data/raw/*.parquet
-data/processed/*.parquet
+# NOTE: We track active listings parquet files in git, so don't ignore them:
+# data/processed/*.parquet  # Commented out - we track active listings here
+# Instead, we selectively ignore parquet files in subdirectories:
+data/processed/*/*.parquet
+!data/processed/active_listings/*.parquet  # TRACK active listings - these are the daily scrapes from Hemnet
 data/database/*.duckdb
 data/database/*.db
 !data/processed/property_details/
