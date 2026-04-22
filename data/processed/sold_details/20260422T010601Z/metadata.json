@@ -3840,10 +3840,94 @@
       "file_size_kb": 9.99,
       "timestamp": "2026-04-22T06:46:44.962591",
       "file": "batch_0659.parquet"
+    },
+    "660": {
+      "count": 5,
+      "file_size_kb": 10.01,
+      "timestamp": "2026-04-22T06:47:20.442014",
+      "file": "batch_0660.parquet"
+    },
+    "661": {
+      "count": 5,
+      "file_size_kb": 10.03,
+      "timestamp": "2026-04-22T06:47:51.228233",
+      "file": "batch_0661.parquet"
+    },
+    "662": {
+      "count": 5,
+      "file_size_kb": 9.91,
+      "timestamp": "2026-04-22T06:48:21.414013",
+      "file": "batch_0662.parquet"
+    },
+    "663": {
+      "count": 5,
+      "file_size_kb": 9.98,
+      "timestamp": "2026-04-22T06:48:51.746477",
+      "file": "batch_0663.parquet"
+    },
+    "664": {
+      "count": 5,
+      "file_size_kb": 9.88,
+      "timestamp": "2026-04-22T06:49:21.927327",
+      "file": "batch_0664.parquet"
+    },
+    "665": {
+      "count": 5,
+      "file_size_kb": 10.05,
+      "timestamp": "2026-04-22T06:49:52.281359",
+      "file": "batch_0665.parquet"
+    },
+    "666": {
+      "count": 5,
+      "file_size_kb": 9.98,
+      "timestamp": "2026-04-22T06:50:22.209983",
+      "file": "batch_0666.parquet"
+    },
+    "667": {
+      "count": 5,
+      "file_size_kb": 9.97,
+      "timestamp": "2026-04-22T06:50:52.842313",
+      "file": "batch_0667.parquet"
+    },
+    "668": {
+      "count": 5,
+      "file_size_kb": 9.88,
+      "timestamp": "2026-04-22T06:51:23.789497",
+      "file": "batch_0668.parquet"
+    },
+    "669": {
+      "count": 5,
+      "file_size_kb": 10.02,
+      "timestamp": "2026-04-22T06:51:54.517065",
+      "file": "batch_0669.parquet"
+    },
+    "670": {
+      "count": 5,
+      "file_size_kb": 9.95,
+      "timestamp": "2026-04-22T06:52:24.986720",
+      "file": "batch_0670.parquet"
+    },
+    "671": {
+      "count": 5,
+      "file_size_kb": 9.93,
+      "timestamp": "2026-04-22T06:52:55.428738",
+      "file": "batch_0671.parquet"
+    },
+    "672": {
+      "count": 5,
+      "file_size_kb": 9.93,
+      "timestamp": "2026-04-22T06:53:25.657459",
+      "file": "batch_0672.parquet"
+    },
+    "673": {
+      "count": 5,
+      "file_size_kb": 9.95,
+      "timestamp": "2026-04-22T06:53:56.049952",
+      "file": "batch_0673.parquet"
     }
   },
-  "total_processed": 3300,
-  "total_successful": 3164,
+  "total_processed": 3370,
+  "total_successful": 3234,
   "total_failed": 136,
-  "last_batch": 659
+  "last_batch": 673
 }
