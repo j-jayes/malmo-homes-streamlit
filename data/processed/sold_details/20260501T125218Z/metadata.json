@@ -3516,10 +3516,16 @@
       "file_size_kb": 10.04,
       "timestamp": "2026-05-01T18:39:35.500139",
       "file": "batch_0639.parquet"
+    },
+    "640": {
+      "count": 5,
+      "file_size_kb": 10.04,
+      "timestamp": "2026-05-01T18:40:15.302666",
+      "file": "batch_0640.parquet"
     }
   },
-  "total_processed": 3200,
-  "total_successful": 2913,
+  "total_processed": 3205,
+  "total_successful": 2918,
   "total_failed": 287,
-  "last_batch": 639
+  "last_batch": 640
 }
