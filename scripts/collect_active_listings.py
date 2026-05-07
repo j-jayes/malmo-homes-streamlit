@@ -140,7 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--predict", action="store_true", help="Run ML predictions after aggregation")
-    parser.add_argument("--headless", action="store_true", default=True)
+    parser.add_argument("--headless", action="store_true")
     parser.add_argument("--show-browser", action="store_true")
     parser.add_argument("--git-commit-interval", type=int, default=0)
     parser.add_argument("--log-level", default="INFO")

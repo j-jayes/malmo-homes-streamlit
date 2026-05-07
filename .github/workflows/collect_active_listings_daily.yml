@@ -139,7 +139,6 @@ jobs:
             --batch-size "$INPUT_BATCH_SIZE" \
             --links-dir "data/raw/active_links" \
             --batches-dir "data/processed/active_details" \
-            --headless \
             --log-level "$INPUT_LOG_LEVEL" \
             --git-commit-interval 50 \
             $LOCATION_FLAG \

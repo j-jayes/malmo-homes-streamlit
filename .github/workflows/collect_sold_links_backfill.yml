@@ -247,7 +247,6 @@ jobs:
                           "--output-dir", out_dir,
                           "--initial-step", step_flag,
                           "--max-pages", pages_flag,
-                          "--headless",
                       ]
                       if test_mode:
                           cmd += ["--min-area", "80", "--max-area", "85"]

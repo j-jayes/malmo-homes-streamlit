@@ -131,7 +131,6 @@ jobs:
               --housing-type "$HOUSING_TYPE" \
               --sold-age $INPUT_SOLD_AGE \
               --output-dir "$OUT_DIR" \
-              --headless \
               $EXTRA \
               $LOCATION_FLAG || {
                 echo "WARNING: $HOUSING_TYPE scrape failed — committing partial and continuing"
