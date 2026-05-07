@@ -136,15 +136,20 @@ def scrape_search_page(url: str, headless: bool = False) -> Dict:
             page.goto(url, wait_until='domcontentloaded', timeout=60000)
             
             # Check for Cloudflare
-            if 'challenge-platform' in page.content():
+            content = page.content()
+            if 'challenge-platform' in content or 'Just a moment' in content:
                 logging.warning("⚠️  Cloudflare challenge detected!")
-                if not headless:
-                    logging.info("Please solve the challenge...")
-                    page.wait_for_url(url, timeout=30000)
-                else:
-                    logging.error("Cannot solve Cloudflare in headless mode")
+                if headless:
+                    logging.warning("Cloudflare in headless mode — retrying with headed browser")
                     browser.close()
-                    return {'links': [], 'pagination': {}, 'error': 'cloudflare'}
+                    return scrape_search_page(url, headless=False)
+                else:
+                    logging.info("Waiting for Cloudflare challenge to auto-resolve...")
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=30000)
+                    except Exception:
+                        pass
+                    time.sleep(3)
             
             # Wait for page to load
             time.sleep(3)
