@@ -59,7 +59,6 @@ on:
 
 permissions:
   contents: write
-  issues: write
 
 concurrency:
   group: collect-sold-links-backfill
@@ -248,7 +247,6 @@ jobs:
                           "--output-dir", out_dir,
                           "--initial-step", step_flag,
                           "--max-pages", pages_flag,
-                          "--headless",
                       ]
                       if test_mode:
                           cmd += ["--min-area", "80", "--max-area", "85"]
@@ -310,16 +308,3 @@ jobs:
             data/raw/sold_links/
             data/raw/sold_links/sold_properties_all_areas.csv
           retention-days: 30
-
-      - name: Create issue on failure
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Backfill sold links failed (${context.runId})`,
-              body: `The historical sold-links backfill failed.\n\nCheck the [run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).\n\n**Resume:** re-trigger with the same start/end months — completed months are skipped automatically via per-month progress.json files.\n\nLabels: backfill, scraping`,
-              labels: ['automation', 'scraping', 'bug']
-            })

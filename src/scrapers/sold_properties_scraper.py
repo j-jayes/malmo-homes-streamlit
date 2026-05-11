@@ -97,16 +97,21 @@ class SoldPropertiesScraper:
         time.sleep(2)
     
     def _handle_cloudflare_if_needed(self, page: Page):
-        """Wait for Cloudflare challenge if present"""
+        """Wait for Cloudflare challenge if present."""
         try:
-            # Check for Cloudflare challenge
-            if "Checking your browser" in page.content() or "cf-browser-verification" in page.content():
-                logger.warning("Cloudflare challenge detected, waiting...")
+            content = page.content()
+            if any(sig in content for sig in (
+                "Checking your browser",
+                "cf-browser-verification",
+                "challenge-platform",
+                "Just a moment",
+            )):
+                logger.warning("Cloudflare challenge detected, waiting for auto-resolve...")
                 page.wait_for_load_state("networkidle", timeout=30000)
                 time.sleep(5)
                 logger.info("Cloudflare challenge passed")
         except Exception as e:
-            logger.debug(f"No Cloudflare challenge: {e}")
+            logger.debug(f"Cloudflare check error: {e}")
     
     def extract_property_links(self, page: Page) -> List[str]:
         """Extract property links from search results page"""
@@ -186,7 +191,7 @@ class SoldPropertiesScraper:
         """
         with sync_playwright() as p:
             browser = p.chromium.launch(
-                headless=True,
+                headless=self.headless,
                 args=['--disable-blink-features=AutomationControlled']
             )
 

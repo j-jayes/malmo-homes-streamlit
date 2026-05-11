@@ -36,7 +36,6 @@ on:
 
 permissions:
   contents: write
-  issues: write
 
 concurrency:
   group: collect-sold-links-weekly
@@ -132,7 +131,6 @@ jobs:
               --housing-type "$HOUSING_TYPE" \
               --sold-age $INPUT_SOLD_AGE \
               --output-dir "$OUT_DIR" \
-              --headless \
               $EXTRA \
               $LOCATION_FLAG || {
                 echo "WARNING: $HOUSING_TYPE scrape failed — committing partial and continuing"
@@ -210,16 +208,3 @@ jobs:
             data/raw/sold_links/**/${{ env.RUN_DATE }}/
             data/raw/sold_links/sold_properties_all_areas.csv
           retention-days: 14
-
-      - name: Create issue on failure
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Weekly sold-link collection failed - ${new Date().toISOString().split('T')[0]}`,
-              body: `Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.\n\nThe dated output directory preserves any partial progress — re-run to pick up where it left off.`,
-              labels: ['automation', 'scraping', 'bug']
-            })

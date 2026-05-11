@@ -24,6 +24,10 @@ from src.models.property_schema import BaseProperty, ForSaleProperty, SoldProper
 logger = logging.getLogger(__name__)
 
 
+class CloudflareChallenge(Exception):
+    """Raised when a Cloudflare challenge page is detected during scraping."""
+
+
 def _parse_sek_amount(value: object) -> Optional[int]:
     """Parse monetary values to integer SEK when possible."""
     if value is None:
@@ -153,20 +157,29 @@ class PropertyScraper:
         return url.rstrip("/").split("-")[-1]
     
     def _handle_cloudflare(self, page: Page) -> None:
-        """Wait for Cloudflare challenge if present."""
+        """Detect Cloudflare challenge and handle or raise accordingly.
+
+        In headed mode the challenge typically auto-resolves; we wait for it.
+        In headless mode a :class:`CloudflareChallenge` is raised so callers
+        can restart with a headed browser.
+        """
         try:
             content = page.content()
-            if 'challenge-platform' in content or 'Just a moment' in content:
-                logger.warning("⚠️  Cloudflare challenge detected!")
-                if not self.headless:
-                    logger.info("Waiting for manual challenge resolution...")
-                    page.wait_for_load_state("networkidle", timeout=30000)
-                    _respectful_sleep()
-                    logger.info("✓ Cloudflare challenge passed")
-                else:
-                    raise Exception("Cloudflare challenge in headless mode - cannot continue")
-        except Exception as e:
-            logger.debug(f"Cloudflare check: {e}")
+        except Exception as exc:
+            logger.debug("Could not read page content for Cloudflare check: %s", exc)
+            return
+        if 'challenge-platform' not in content and 'Just a moment' not in content:
+            return
+        logger.warning("⚠️  Cloudflare challenge detected!")
+        if self.headless:
+            raise CloudflareChallenge("Cloudflare challenge page encountered in headless mode")
+        logger.info("Waiting for Cloudflare challenge to auto-resolve...")
+        try:
+            page.wait_for_load_state("networkidle", timeout=30000)
+        except Exception:
+            pass
+        _respectful_sleep(2.0, 4.0)
+        logger.info("✓ Cloudflare challenge passed")
     
     def _setup_request_interception(self, page: Page) -> None:
         """Set up network request interception for coordinate extraction."""
@@ -519,15 +532,21 @@ class PropertyScraper:
         return data
     
     def scrape_property(self, url: str) -> Optional[BaseProperty]:
-        """Scrape a single property page and return a validated Pydantic model."""
+        """Scrape a single property page and return a validated Pydantic model.
+
+        If a Cloudflare challenge is detected while running in headless mode the
+        browser is restarted in headed mode and the page is retried once.
+        """
         property_type = self.detect_property_type(url)
         property_id = self.extract_property_id(url)
 
-        context = self._new_context()
-        page = context.new_page()
-        self._setup_request_interception(page)
-
+        context: BrowserContext | None = None
+        page: Page | None = None
         try:
+            context = self._new_context()
+            page = context.new_page()
+            self._setup_request_interception(page)
+
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
             self._handle_cloudflare(page)
             page.wait_for_timeout(5000)
@@ -555,9 +574,26 @@ class PropertyScraper:
             model.calculate_derived_fields()
             return model
 
+        except CloudflareChallenge:
+            logger.warning(
+                "Cloudflare challenge in headless mode — switching to headed browser and retrying: %s",
+                url,
+            )
+            self.headless = False
+            self.close()
+            return self.scrape_property(url)
+
         except Exception as exc:
             logger.error("Error scraping %s: %s", url, exc, exc_info=True)
             return None
         finally:
-            page.close()
-            context.close()
+            if page is not None:
+                try:
+                    page.close()
+                except Exception:
+                    pass
+            if context is not None:
+                try:
+                    context.close()
+                except Exception:
+                    pass
