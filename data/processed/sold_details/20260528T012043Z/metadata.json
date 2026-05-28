@@ -1080,10 +1080,22 @@
       "file_size_kb": 9.66,
       "timestamp": "2026-05-28T07:04:40.343365",
       "file": "batch_0279.parquet"
+    },
+    "280": {
+      "count": 5,
+      "file_size_kb": 9.71,
+      "timestamp": "2026-05-28T07:06:04.221414",
+      "file": "batch_0280.parquet"
+    },
+    "281": {
+      "count": 5,
+      "file_size_kb": 9.65,
+      "timestamp": "2026-05-28T07:07:19.913117",
+      "file": "batch_0281.parquet"
     }
   },
-  "total_processed": 1400,
-  "total_successful": 898,
+  "total_processed": 1410,
+  "total_successful": 908,
   "total_failed": 502,
-  "last_batch": 279
+  "last_batch": 281
 }
