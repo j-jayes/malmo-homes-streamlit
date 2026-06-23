@@ -432,10 +432,76 @@
       "file_size_kb": 9.6,
       "timestamp": "2026-06-23T03:00:18.685472",
       "file": "batch_0078.parquet"
+    },
+    "80": {
+      "count": 1,
+      "file_size_kb": 8.57,
+      "timestamp": "2026-06-23T03:02:48.445353",
+      "file": "batch_0080.parquet"
+    },
+    "81": {
+      "count": 2,
+      "file_size_kb": 9.28,
+      "timestamp": "2026-06-23T03:03:58.490494",
+      "file": "batch_0081.parquet"
+    },
+    "91": {
+      "count": 2,
+      "file_size_kb": 9.22,
+      "timestamp": "2026-06-23T03:15:59.259509",
+      "file": "batch_0091.parquet"
+    },
+    "92": {
+      "count": 5,
+      "file_size_kb": 9.77,
+      "timestamp": "2026-06-23T03:17:07.687479",
+      "file": "batch_0092.parquet"
+    },
+    "93": {
+      "count": 4,
+      "file_size_kb": 9.65,
+      "timestamp": "2026-06-23T03:18:45.671829",
+      "file": "batch_0093.parquet"
+    },
+    "94": {
+      "count": 5,
+      "file_size_kb": 9.98,
+      "timestamp": "2026-06-23T03:20:01.887170",
+      "file": "batch_0094.parquet"
+    },
+    "95": {
+      "count": 5,
+      "file_size_kb": 9.94,
+      "timestamp": "2026-06-23T03:21:14.787044",
+      "file": "batch_0095.parquet"
+    },
+    "96": {
+      "count": 5,
+      "file_size_kb": 9.88,
+      "timestamp": "2026-06-23T03:22:27.919520",
+      "file": "batch_0096.parquet"
+    },
+    "97": {
+      "count": 5,
+      "file_size_kb": 9.79,
+      "timestamp": "2026-06-23T03:23:37.090314",
+      "file": "batch_0097.parquet"
+    },
+    "98": {
+      "count": 5,
+      "file_size_kb": 10.03,
+      "timestamp": "2026-06-23T03:24:51.871832",
+      "file": "batch_0098.parquet"
+    },
+    "99": {
+      "count": 5,
+      "file_size_kb": 9.95,
+      "timestamp": "2026-06-23T03:26:00.118075",
+      "file": "batch_0099.parquet"
     }
   },
-  "total_processed": 400,
-  "total_successful": 327,
-  "total_failed": 73,
-  "last_batch": 79
+  "total_processed": 500,
+  "total_successful": 371,
+  "total_failed": 129,
+  "last_batch": 99
 }
