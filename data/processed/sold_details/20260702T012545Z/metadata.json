@@ -1,8 +1,21 @@
 {
   "created_at": "2026-07-02T01:25:47.238708",
-  "batches": {},
-  "total_processed": 200,
-  "total_successful": 0,
-  "total_failed": 200,
-  "last_batch": 39
+  "batches": {
+    "58": {
+      "count": 1,
+      "file_size_kb": 8.67,
+      "timestamp": "2026-07-02T02:36:20.958488",
+      "file": "batch_0058.parquet"
+    },
+    "59": {
+      "count": 5,
+      "file_size_kb": 9.74,
+      "timestamp": "2026-07-02T02:38:04.268256",
+      "file": "batch_0059.parquet"
+    }
+  },
+  "total_processed": 300,
+  "total_successful": 6,
+  "total_failed": 294,
+  "last_batch": 59
 }
