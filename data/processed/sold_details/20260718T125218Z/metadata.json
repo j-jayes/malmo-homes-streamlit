@@ -204,10 +204,130 @@
       "file_size_kb": 9.54,
       "timestamp": "2026-07-18T14:30:07.249093",
       "file": "batch_0079.parquet"
+    },
+    "80": {
+      "count": 5,
+      "file_size_kb": 9.56,
+      "timestamp": "2026-07-18T14:31:29.387931",
+      "file": "batch_0080.parquet"
+    },
+    "81": {
+      "count": 5,
+      "file_size_kb": 9.65,
+      "timestamp": "2026-07-18T14:32:44.194932",
+      "file": "batch_0081.parquet"
+    },
+    "82": {
+      "count": 4,
+      "file_size_kb": 9.41,
+      "timestamp": "2026-07-18T14:33:58.432516",
+      "file": "batch_0082.parquet"
+    },
+    "83": {
+      "count": 5,
+      "file_size_kb": 9.65,
+      "timestamp": "2026-07-18T14:35:14.487911",
+      "file": "batch_0083.parquet"
+    },
+    "84": {
+      "count": 4,
+      "file_size_kb": 9.29,
+      "timestamp": "2026-07-18T14:36:24.705130",
+      "file": "batch_0084.parquet"
+    },
+    "85": {
+      "count": 5,
+      "file_size_kb": 9.55,
+      "timestamp": "2026-07-18T14:37:41.123302",
+      "file": "batch_0085.parquet"
+    },
+    "86": {
+      "count": 5,
+      "file_size_kb": 9.64,
+      "timestamp": "2026-07-18T14:39:20.680225",
+      "file": "batch_0086.parquet"
+    },
+    "87": {
+      "count": 3,
+      "file_size_kb": 9.21,
+      "timestamp": "2026-07-18T14:40:35.884521",
+      "file": "batch_0087.parquet"
+    },
+    "88": {
+      "count": 5,
+      "file_size_kb": 9.86,
+      "timestamp": "2026-07-18T14:41:49.470655",
+      "file": "batch_0088.parquet"
+    },
+    "89": {
+      "count": 5,
+      "file_size_kb": 9.52,
+      "timestamp": "2026-07-18T14:43:03.143482",
+      "file": "batch_0089.parquet"
+    },
+    "90": {
+      "count": 4,
+      "file_size_kb": 9.44,
+      "timestamp": "2026-07-18T14:44:12.963928",
+      "file": "batch_0090.parquet"
+    },
+    "91": {
+      "count": 5,
+      "file_size_kb": 9.58,
+      "timestamp": "2026-07-18T14:45:24.640711",
+      "file": "batch_0091.parquet"
+    },
+    "92": {
+      "count": 4,
+      "file_size_kb": 9.53,
+      "timestamp": "2026-07-18T14:46:37.295439",
+      "file": "batch_0092.parquet"
+    },
+    "93": {
+      "count": 4,
+      "file_size_kb": 9.46,
+      "timestamp": "2026-07-18T14:47:46.610855",
+      "file": "batch_0093.parquet"
+    },
+    "94": {
+      "count": 4,
+      "file_size_kb": 9.27,
+      "timestamp": "2026-07-18T14:48:58.756988",
+      "file": "batch_0094.parquet"
+    },
+    "95": {
+      "count": 4,
+      "file_size_kb": 9.38,
+      "timestamp": "2026-07-18T14:50:12.461690",
+      "file": "batch_0095.parquet"
+    },
+    "96": {
+      "count": 5,
+      "file_size_kb": 9.66,
+      "timestamp": "2026-07-18T14:51:26.794887",
+      "file": "batch_0096.parquet"
+    },
+    "97": {
+      "count": 4,
+      "file_size_kb": 9.54,
+      "timestamp": "2026-07-18T14:52:40.703266",
+      "file": "batch_0097.parquet"
+    },
+    "98": {
+      "count": 5,
+      "file_size_kb": 9.53,
+      "timestamp": "2026-07-18T14:53:54.705987",
+      "file": "batch_0098.parquet"
+    },
+    "99": {
+      "count": 5,
+      "file_size_kb": 9.61,
+      "timestamp": "2026-07-18T14:55:09.332721",
+      "file": "batch_0099.parquet"
     }
   },
-  "total_processed": 400,
-  "total_successful": 128,
-  "total_failed": 272,
-  "last_batch": 79
+  "total_processed": 500,
+  "total_successful": 218,
+  "total_failed": 282,
+  "last_batch": 99
 }
