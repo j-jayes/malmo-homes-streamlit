@@ -1,8 +1,15 @@
 {
   "created_at": "2026-08-03T13:31:02.477341",
-  "batches": {},
-  "total_processed": 200,
-  "total_successful": 0,
-  "total_failed": 200,
-  "last_batch": 39
+  "batches": {
+    "45": {
+      "count": 1,
+      "file_size_kb": 8.38,
+      "timestamp": "2026-08-03T14:25:51.732787",
+      "file": "batch_0045.parquet"
+    }
+  },
+  "total_processed": 300,
+  "total_successful": 1,
+  "total_failed": 299,
+  "last_batch": 59
 }
