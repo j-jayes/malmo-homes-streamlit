@@ -1386,10 +1386,16 @@
       "file_size_kb": 9.51,
       "timestamp": "2026-08-03T05:52:57.396787",
       "file": "batch_0239.parquet"
+    },
+    "240": {
+      "count": 2,
+      "file_size_kb": 9.11,
+      "timestamp": "2026-08-03T05:54:19.590536",
+      "file": "batch_0240.parquet"
     }
   },
-  "total_processed": 1200,
-  "total_successful": 893,
-  "total_failed": 307,
-  "last_batch": 239
+  "total_processed": 1300,
+  "total_successful": 895,
+  "total_failed": 405,
+  "last_batch": 259
 }
