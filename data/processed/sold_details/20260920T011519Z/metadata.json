@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-09-20T01:15:21.407707",
+  "batches": {
+    "3": {
+      "count": 1,
+      "file_size_kb": 8.56,
+      "timestamp": "2026-09-20T01:24:30.324627",
+      "file": "batch_0003.parquet"
+    },
+    "7": {
+      "count": 1,
+      "file_size_kb": 8.74,
+      "timestamp": "2026-09-20T01:34:43.142943",
+      "file": "batch_0007.parquet"
+    }
+  },
+  "total_processed": 100,
+  "total_successful": 2,
+  "total_failed": 98,
+  "last_batch": 19
+}
